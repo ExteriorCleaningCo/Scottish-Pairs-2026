@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Scottish Pairs 2026</title>
+<meta name="theme-color" content="#0F2418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Scottish Pairs">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230065BD'/%3E%3Cline x1='6' y1='6' x2='94' y2='94' stroke='white' stroke-width='20'/%3E%3Cline x1='94' y1='6' x2='6' y2='94' stroke='white' stroke-width='20'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230065BD'/%3E%3Cline x1='6' y1='6' x2='94' y2='94' stroke='white' stroke-width='20'/%3E%3Cline x1='94' y1='6' x2='6' y2='94' stroke='white' stroke-width='20'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@500;700;900&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0F2418;
+  --bg-alt:#16311F;
+  --bg-raised:#1D3B28;
+  --paper:#F3ECDA;
+  --paper-dim:#E7DEC6;
+  --ink:#1C1B14;
+  --ink-soft:#5A5647;
+  --cream-ink:#EDE7D6;
+  --cream-ink-dim:#A9B5A9;
+  --gold:#D8B24C;
+  --silver:#B9C2C9;
+  --bronze:#C08552;
+  --red:#B23A2E;
+  --green-acc:#5C9A6B;
+  --saltire:#0065BD;
+  --line:#2A4A34;
+  --radius:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(216,178,76,0.08), transparent 40%),
+    radial-gradient(circle at 85% 100%, rgba(0,101,189,0.10), transparent 45%);
+  color:var(--cream-ink);
+  font-family:'Inter',system-ui,sans-serif;
+  min-height:100vh;
+  padding-bottom:calc(78px + env(safe-area-inset-bottom));
+}
+#app{max-width:560px;margin:0 auto;}
+header.top{
+  padding:calc(20px + env(safe-area-inset-top)) 20px 14px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+header.top .brand{display:flex; align-items:center; gap:11px;}
+.saltire{width:34px;height:26px;border-radius:4px;position:relative;overflow:hidden;background:var(--saltire);flex:0 0 auto;box-shadow:0 2px 6px rgba(0,0,0,0.35);}
+.saltire i{position:absolute;top:50%;left:50%;width:150%;height:7px;background:#fff;}
+.saltire i.a{transform:translate(-50%,-50%) rotate(28deg);}
+.saltire i.b{transform:translate(-50%,-50%) rotate(-28deg);}
+header.top h1{
+  font-family:'Big Shoulders',sans-serif; font-weight:900; letter-spacing:0.3px;
+  font-size:22px; margin:0; text-transform:uppercase; line-height:0.95;
+  color:var(--paper);
+}
+header.top .sub{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--cream-ink-dim);margin-top:3px;}
+main{padding:0 16px 20px;}
+.card{
+  background:var(--paper); color:var(--ink); border-radius:var(--radius);
+  padding:16px; margin-bottom:14px; box-shadow:0 6px 18px rgba(0,0,0,0.25);
+}
+.card h2{
+  font-family:'Big Shoulders',sans-serif; font-size:19px; text-transform:uppercase;
+  letter-spacing:0.5px; margin:0 0 10px; font-weight:700; color:var(--ink);
+  display:flex; align-items:center; justify-content:space-between;
+}
+.panel-dark{background:var(--bg-raised); border-radius:var(--radius); padding:16px; margin-bottom:14px; border:1px solid var(--line);}
+.panel-dark h2{font-family:'Big Shoulders',sans-serif; font-size:19px; text-transform:uppercase; margin:0 0 10px; color:var(--paper); font-weight:700;}
+.muted{color:var(--ink-soft); font-size:13px;}
+.muted-dark{color:var(--cream-ink-dim); font-size:13px;}
+
+/* Podium */
+.podium{display:flex; align-items:flex-end; gap:8px; margin:6px 0 16px; padding:0 4px;}
+.podium .spot{flex:1; text-align:center;}
+.podium .bar{border-radius:8px 8px 0 0; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; color:var(--ink); font-family:'Roboto Mono',monospace; font-weight:700; padding-bottom:6px;}
+.podium .p1 .bar{height:92px; background:linear-gradient(180deg,#EAC96C,var(--gold));}
+.podium .p2 .bar{height:70px; background:linear-gradient(180deg,#D3DCE1,var(--silver));}
+.podium .p3 .bar{height:52px; background:linear-gradient(180deg,#D39B6E,var(--bronze));}
+.podium .rank{font-family:'Big Shoulders',sans-serif; font-size:22px; font-weight:900;}
+.podium .name{font-family:'Inter',sans-serif; font-size:11.5px; font-weight:700; margin-top:6px; color:var(--paper); line-height:1.2;}
+.podium .pts{font-size:10.5px; color:var(--cream-ink-dim); margin-top:1px;}
+
+/* Leaderboard rows */
+.lb-row{display:flex; align-items:center; gap:10px; padding:10px 6px; border-bottom:1px solid #E3DAC0;}
+.lb-row:last-child{border-bottom:none;}
+.lb-pos{font-family:'Big Shoulders',sans-serif; font-weight:900; font-size:19px; width:24px; color:var(--ink-soft); text-align:center;}
+.lb-pos.gold{color:#A57F1F;} .lb-pos.silver{color:#6E7880;} .lb-pos.bronze{color:#8C5A34;}
+.lb-info{flex:1; min-width:0;}
+.lb-team{font-weight:700; font-size:14.5px;}
+.lb-players{font-size:11px; color:var(--ink-soft); margin-top:1px;}
+.lb-val{font-family:'Roboto Mono',monospace; font-weight:700; font-size:16px; text-align:right; min-width:48px;}
+.lb-strokes{font-size:10.5px; color:var(--ink-soft); text-align:right; margin-top:1px;}
+.chip{display:inline-block; font-family:'Roboto Mono',monospace; font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:20px; margin-left:6px;}
+.chip.minus{background:rgba(92,154,107,0.18); color:#2F6B3D;}
+.chip.plus{background:rgba(178,58,46,0.14); color:var(--red);}
+.chip.tie{background:rgba(216,178,76,0.22); color:#8A6A1F;}
+.chip.flat{background:rgba(169,181,169,0.18); color:var(--ink-soft);}
+
+/* Tabs */
+nav.tabbar{
+  position:fixed; bottom:0; left:0; right:0; background:var(--bg-raised);
+  border-top:1px solid var(--line); padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+  display:flex; justify-content:center; gap:4px; z-index:20;
+}
+nav.tabbar .wrap{display:flex; gap:4px; max-width:560px; width:100%;}
+nav.tabbar button{
+  flex:1; background:transparent; border:none; color:var(--cream-ink-dim);
+  font-family:'Inter',sans-serif; font-size:10.5px; font-weight:600; letter-spacing:0.2px;
+  padding:8px 2px; border-radius:10px; display:flex; flex-direction:column; align-items:center; gap:3px;
+}
+nav.tabbar button .ic{font-size:16px;}
+nav.tabbar button.active{background:rgba(216,178,76,0.14); color:var(--gold);}
+
+/* Forms */
+label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--ink-soft); margin:10px 0 4px;}
+label:first-child{margin-top:0;}
+input[type=text], input[type=number], input[type=date]{
+  width:100%; padding:10px 12px; border-radius:9px; border:1px solid #D8CDA9;
+  background:#FBF8EF; font-family:'Inter',sans-serif; font-size:15px; color:var(--ink);
+}
+input:focus{outline:2px solid var(--gold); outline-offset:1px;}
+.row2{display:flex; gap:10px;}
+.row2 > div{flex:1;}
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:11px 16px; border-radius:10px; border:none; font-family:'Inter',sans-serif;
+  font-weight:700; font-size:13.5px; cursor:pointer; width:100%; margin-top:12px;
+}
+.btn-primary{background:var(--gold); color:#241B04;}
+.btn-ghost{background:transparent; border:1px solid var(--line); color:var(--cream-ink);}
+.btn-danger{background:transparent; border:1px solid rgba(178,58,46,0.4); color:#E28477;}
+.team-item, .round-item{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:11px 4px; border-bottom:1px solid var(--line);
+}
+.team-item:last-child, .round-item:last-child{border-bottom:none;}
+.team-item .tinfo{font-size:13.5px;} .team-item .tname{font-weight:700; color:var(--paper);}
+.team-item .tplayers{color:var(--cream-ink-dim); font-size:12px; margin-top:1px;}
+.round-item .rname{font-weight:700; color:var(--paper); font-size:14px;}
+.round-item .rstatus{font-size:11px; color:var(--cream-ink-dim); margin-top:1px;}
+.icon-btn{background:none; border:none; color:var(--cream-ink-dim); font-size:16px; padding:6px;}
+
+/* Scores entry */
+.score-block{padding:11px 4px; border-bottom:1px solid #E3DAC0;}
+.score-block:last-child{border-bottom:none;}
+.score-block .sname{font-size:13.5px; font-weight:700; display:flex; align-items:center; flex-wrap:wrap; gap:5px;}
+.score-block .splayers{font-size:11px; color:var(--ink-soft); font-weight:400; width:100%; margin-top:1px;}
+.score-inputs{display:flex; gap:8px; margin-top:8px; align-items:flex-end;}
+.score-inputs .fld{flex:1;}
+.score-inputs .fld span{display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--ink-soft); margin-bottom:3px;}
+.score-inputs input{text-align:center; font-family:'Roboto Mono',monospace; font-weight:700; font-size:15px; padding:8px 4px;}
+.net-box{flex:0 0 auto; text-align:center; min-width:52px;}
+.net-box span{display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--ink-soft); margin-bottom:3px;}
+.net-box .netval{font-family:'Roboto Mono',monospace; font-weight:900; font-size:17px; color:var(--ink);}
+.carry-note{font-size:10px; color:var(--ink-soft); margin-top:4px;}
+.tiebreak-row{background:#F7F0DC; border:1px dashed #C9A83A; border-radius:8px; padding:8px 10px; margin-top:8px;}
+.tiebreak-row .tb-label{font-size:10.5px; font-weight:700; color:#8A6A1F; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px;}
+.round-tabs{display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; margin-bottom:4px;}
+.round-tabs::-webkit-scrollbar{display:none;}
+.round-pill{flex:0 0 auto; padding:7px 13px; border-radius:20px; background:var(--bg-raised); border:1px solid var(--line); color:var(--cream-ink-dim); font-size:12px; font-weight:700;}
+.round-pill.active{background:var(--gold); color:#241B04; border-color:var(--gold);}
+.round-pill.done:after{content:' ✓';}
+.round-pill.tied:after{content:' ⚑';}
+.round-pill.waiting:after{content:' …';}
+
+.empty{text-align:center; padding:30px 10px; color:var(--cream-ink-dim); font-size:13.5px;}
+.toggle2{display:flex; background:var(--bg-raised); border-radius:11px; padding:3px; margin-bottom:14px; border:1px solid var(--line);}
+.toggle2 button{flex:1; background:none; border:none; padding:9px; border-radius:8px; color:var(--cream-ink-dim); font-family:'Inter',sans-serif; font-weight:700; font-size:12.5px;}
+.toggle2 button.active{background:var(--gold); color:#241B04;}
+.matrix{width:100%; border-collapse:collapse; font-size:11px;}
+.matrix th,.matrix td{padding:6px 4px; text-align:center; border-bottom:1px solid #E3DAC0;}
+.matrix th{color:var(--ink-soft); font-weight:600; font-size:10px; text-transform:uppercase;}
+.matrix td.team-col, .matrix th.team-col{text-align:left; font-weight:700;}
+.toast{
+  position:fixed; bottom:calc(90px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+  background:var(--gold); color:#241B04; padding:9px 18px; border-radius:20px; font-weight:700;
+  font-size:13px; z-index:50; box-shadow:0 6px 16px rgba(0,0,0,0.3); opacity:0; pointer-events:none;
+  transition:opacity 0.25s, transform 0.25s;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand">
+      <div class="saltire"><i class="a"></i><i class="b"></i></div>
+      <div>
+        <h1>Scottish Pairs 2026</h1>
+        <div class="sub">5 rounds &middot; pairs better-ball</div>
+        <div class="sub" id="conn-status" style="margin-top:2px;">🟡 Connecting…</div>
+      </div>
+    </div>
+  </header>
+  <main id="view"></main>
+</div>
+<nav class="tabbar"><div class="wrap">
+  <button data-tab="leaderboard"><span class="ic">🏆</span>Overall</button>
+  <button data-tab="scores"><span class="ic">⛳</span>Daily</button>
+  <button data-tab="courses"><span class="ic">📍</span>Courses</button>
+  <button data-tab="setup"><span class="ic">⚙️</span>Setup</button>
+</div></nav>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// ---- Firebase project config ----
+// Create a project at https://console.firebase.google.com, add a Web App,
+// enable Firestore (Native mode), then paste that app's config below.
+const firebaseConfig = {
+  apiKey: "PASTE_YOUR_API_KEY",
+  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
+  projectId: "PASTE_YOUR_PROJECT_ID",
+  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
+  messagingSenderId: "PASTE_YOUR_SENDER_ID",
+  appId: "PASTE_YOUR_APP_ID"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const stateRef = doc(db, "competition", "scottishPairs2026");
+
+const SCORE_MODEL = 'net-v1';
+const DEFAULT_TEAMS = 12;
+const DEFAULT_ROUNDS = 5;
+
+function uid(p){ return p + Math.random().toString(36).slice(2,9); }
+
+function defaultState(){
+  const teams = defaultPairNames().map(([p1,p2])=>({id:uid('t'), name:p1+' & '+p2, p1, p2}));
+  const courseNames = ['Kirriemuir','Alyth','Strathmore','Forfar','Blairgowrie'];
+  const rounds = Array.from({length:DEFAULT_ROUNDS}, (_,i)=>({id:uid('r'), course:courseNames[i]||'', date:''}));
+  const prizes = { daily:[60,40,30,20], overall:[200,150,100] };
+  return { teams, rounds, scores:{}, prizes, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
+}
+function defaultPairNames(){
+  return [
+    ['Matt','Al'], ['Paul','Mick'], ['Sam','Bails'], ['Nick','Mogga'],
+    ['Paz','Paul'], ['Gregg','Dude'], ['Charlie','Jim'], ['Dave','Billy'],
+    ['Si','James'], ['Hendo','Briz'], ['Jack','Ben'], ['Oli','Jay P']
+  ];
+}
+
+let state = defaultState();
+let ready = false;
+
+// Runs on every snapshot. Returns true if it changed anything that needs writing back.
+function runMigrations(){
+  let changed = false;
+  if(!state.prizes){ state.prizes = { daily:[60,40,30,20], overall:[200,150,100] }; changed = true; }
+
+  // Patch any still-default "Pair N" slots (untouched, no players) with the real pairings.
+  const pairNames = defaultPairNames();
+  state.teams.forEach((t,i)=>{
+    if(i < pairNames.length && /^Pair \d+$/.test(t.name) && !t.p1 && !t.p2){
+      const [p1,p2] = pairNames[i];
+      t.name = p1+' & '+p2; t.p1 = p1; t.p2 = p2;
+      changed = true;
+    }
+  });
+
+  // One-off reset: scoring model changed to the net-score / carry-forward adjustment system.
+  if(state.scoreModel !== SCORE_MODEL){
+    state.scores = {};
+    state.scoreModel = SCORE_MODEL;
+    changed = true;
+  }
+
+  // Fill in the real course names for any day left blank, and rename Baz -> Paz.
+  const courseNames = ['Kirriemuir','Alyth','Strathmore','Forfar','Blairgowrie'];
+  state.rounds.forEach((r,i)=>{
+    if(!r.course && courseNames[i]){ r.course = courseNames[i]; changed = true; }
+  });
+  state.teams.forEach(t=>{
+    let touched = false;
+    if(t.p1==='Baz'){ t.p1='Paz'; touched = true; }
+    if(t.p2==='Baz'){ t.p2='Paz'; touched = true; }
+    if(touched){ t.name = [t.p1,t.p2].join(' & '); changed = true; }
+  });
+
+  return changed;
+}
+
+function save(){
+  setDoc(stateRef, state).then(()=>{
+    setConnStatus('live');
+  }).catch(err=>{
+    console.error(err);
+    setConnStatus('error');
+    toast('Could not sync — check connection');
+  });
+}
+
+function setConnStatus(mode){
+  const el = document.getElementById('conn-status');
+  if(!el) return;
+  if(mode==='live') el.innerHTML = '🟢 Live';
+  else if(mode==='connecting') el.innerHTML = '🟡 Connecting…';
+  else el.innerHTML = '🔴 Offline — edits saved to this device only';
+}
+
+onSnapshot(stateRef, (snap)=>{
+  if(snap.exists()){
+    state = snap.data();
+  } else {
+    state = defaultState();
+    setDoc(stateRef, state);
+  }
+  const changed = runMigrations();
+  ready = true;
+  setConnStatus('live');
+  if(changed) save(); else render();
+}, (err)=>{
+  console.error(err);
+  setConnStatus('error');
+  document.getElementById('view').innerHTML = `<div class="card"><div class="empty">Couldn't connect to Firebase.<br>Check the firebaseConfig at the top of the HTML file matches your Firebase project, and that Firestore is enabled.</div></div>`;
+});
+setConnStatus('connecting');
+
+function money(n){ return '£'+Number(n||0).toLocaleString('en-GB'); }
+function dailyPrize(rank){ const p = state.prizes.daily; return (rank>=1 && rank<=p.length) ? p[rank-1] : null; }
+function overallPrize(pos){ const p = state.prizes.overall; return (pos>=1 && pos<=p.length) ? p[pos-1] : null; }
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h);
+  toast._h = setTimeout(()=>t.classList.remove('show'), 1600);
+}
+
+/* ---------- scoring engine ---------- */
+function getScore(roundId, teamId){
+  const rs = state.scores[roundId] || {};
+  const s = rs[teamId];
+  return (s && typeof s==='object') ? s : {};
+}
+function setScoreField(roundId, teamId, field, val){
+  if(!state.scores[roundId]) state.scores[roundId] = {};
+  if(!state.scores[roundId][teamId]) state.scores[roundId][teamId] = {};
+  if(val===null || val===undefined || isNaN(val)) delete state.scores[roundId][teamId][field];
+  else state.scores[roundId][teamId][field] = val;
+}
+function hasTotal(s){ return typeof s.f9==='number' && typeof s.b9==='number'; }
+function grossTotal(s){ return s.f9 + s.b9; }
+
+function clusterBy(arr, keyFn){
+  const sorted = [...arr].sort((a,b)=> keyFn(a)-keyFn(b));
+  const out = [];
+  let i=0;
+  while(i<sorted.length){
+    let j=i;
+    while(j+1<sorted.length && keyFn(sorted[j+1])===keyFn(sorted[i])) j++;
+    out.push(sorted.slice(i,j+1));
+    i=j+1;
+  }
+  return out;
+}
+
+// entries: [{teamId, net, b9, l6, l3}] — clusters by net, then countback on real holes (b9, l6, l3)
+function buildOrder(entries){
+  let clusters = clusterBy(entries, e=>e.net);
+  let blocking = null;
+  clusters = clusters.flatMap(cluster=>{
+    if(cluster.length===1 || blocking) return [cluster];
+    return clusterBy(cluster, e=>e.b9);
+  });
+  clusters = clusters.flatMap(cluster=>{
+    if(cluster.length===1 || blocking) return [cluster];
+    const haveAll = cluster.every(e=>typeof e.l6==='number');
+    if(!haveAll){ blocking = {level:'l6', teamIds:cluster.map(e=>e.teamId)}; return [cluster]; }
+    return clusterBy(cluster, e=>e.l6);
+  });
+  clusters = clusters.flatMap(cluster=>{
+    if(cluster.length===1 || blocking) return [cluster];
+    const haveAll = cluster.every(e=>typeof e.l3==='number');
+    if(!haveAll){ blocking = {level:'l3', teamIds:cluster.map(e=>e.teamId)}; return [cluster]; }
+    return clusterBy(cluster, e=>e.l3);
+  });
+  return { resolved: !blocking, clusters, blocking };
+}
+
+// Walks rounds in day order, carrying each pair's running adjustment forward.
+// A top-2/bottom-2 finish adds/subtracts its delta from whatever the pair is already
+// carrying (stacks); any other finish leaves the running carry untouched.
+function computeAllRounds(){
+  const n = state.teams.length;
+  let carry = {}; state.teams.forEach(t=> carry[t.id]=0);
+  let chainBroken = false;
+  const out = {};
+
+  state.rounds.forEach(r=>{
+    if(chainBroken){
+      out[r.id] = { started:false, resolved:false, blocking:null, waitingOnEarlierDay:true, results:null };
+      return;
+    }
+    const rawEntries = state.teams.map(t=>{
+      const s = getScore(r.id, t.id);
+      return { teamId:t.id, f9:s.f9, b9:s.b9, l6:s.l6, l3:s.l3, gross: hasTotal(s) ? grossTotal(s) : null };
+    });
+    if(n===0 || rawEntries.some(e=>e.gross===null)){
+      out[r.id] = { started: rawEntries.some(e=>e.gross!==null), resolved:false, blocking:null, results:null, adjBefore:{...carry} };
+      chainBroken = true;
+      return;
+    }
+    const entries = rawEntries.map(e=> ({...e, net: e.gross + carry[e.teamId], adjBefore: carry[e.teamId]}));
+    const { resolved, clusters, blocking } = buildOrder(entries);
+    if(!resolved){
+      out[r.id] = { started:true, resolved:false, blocking, results:null, adjBefore:{...carry} };
+      chainBroken = true;
+      return;
+    }
+    const results = {};
+    let pos = 1;
+    const nextCarry = {...carry};
+    clusters.forEach(cluster=>{
+      const rank = pos;
+      let delta = 0;
+      if(rank===1) delta=2; else if(rank===2) delta=1;
+      else if(rank===n-1) delta=-1; else if(rank===n) delta=-2;
+      cluster.forEach(e=>{
+        const points = (n - rank + 1) * 2;
+        results[e.teamId] = { rank, gross:e.gross, adjBefore:e.adjBefore, net:e.net, delta, points, tied: cluster.length>1 };
+        nextCarry[e.teamId] = carry[e.teamId] + delta;
+      });
+      pos += cluster.length;
+    });
+    out[r.id] = { started:true, resolved:true, blocking:null, results, adjBefore:{...carry} };
+    carry = nextCarry;
+  });
+  return out;
+}
+
+function standings(){
+  const res = computeAllRounds();
+  const table = state.teams.map(t=>{
+    let net=0, points=0, roundsPlayed=0;
+    state.rounds.forEach(r=>{
+      const rr = res[r.id];
+      if(rr && rr.resolved && rr.results[t.id]){
+        net += rr.results[t.id].net;
+        points += rr.results[t.id].points;
+        roundsPlayed++;
+      }
+    });
+    return { team:t, net, points, roundsPlayed };
+  });
+  return { table, res };
+}
+
+/* ---------- rendering ---------- */
+let activeTab = 'leaderboard';
+let lbMode = 'net'; // net | points
+
+function render(){
+  document.querySelectorAll('.tabbar button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab===activeTab);
+  });
+  const view = document.getElementById('view');
+  if(activeTab==='leaderboard') view.innerHTML = renderLeaderboard();
+  else if(activeTab==='scores') view.innerHTML = renderScores();
+  else if(activeTab==='courses') view.innerHTML = renderCourses();
+  else view.innerHTML = renderSetup();
+  attachHandlers();
+}
+
+function ordinal(n){
+  const s=["th","st","nd","rd"], v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+
+function renderLeaderboard(){
+  const { table } = standings();
+  const anyPlayed = table.some(r=>r.roundsPlayed>0);
+  if(!anyPlayed){
+    return `<div class="card"><div class="empty">No rounds completed yet.<br>Enter scores for a round on the Daily tab and the leaderboards will build themselves.</div></div>`;
+  }
+  const sorted = [...table].sort((a,b)=> lbMode==='net' ? (a.net-b.net) : (b.points-a.points));
+
+  let podiumHtml = '';
+  if(sorted.length>=3){
+    const [p1,p2,p3] = sorted;
+    const val = r => lbMode==='net' ? r.net+' net' : r.points+' pts';
+    const prizeTag = pos => (lbMode==='net' && overallPrize(pos)) ? `<div class="pts" style="color:var(--gold);font-weight:700;">${money(overallPrize(pos))}</div>` : '';
+    podiumHtml = `<div class="podium">
+      <div class="spot p2"><div class="bar"><div class="rank">2</div></div><div class="name">${esc(p2.team.name)}</div><div class="pts">${val(p2)}</div>${prizeTag(2)}</div>
+      <div class="spot p1"><div class="bar"><div class="rank">1</div></div><div class="name">${esc(p1.team.name)}</div><div class="pts">${val(p1)}</div>${prizeTag(1)}</div>
+      <div class="spot p3"><div class="bar"><div class="rank">3</div></div><div class="name">${esc(p3.team.name)}</div><div class="pts">${val(p3)}</div>${prizeTag(3)}</div>
+    </div>`;
+  }
+
+  const rows = sorted.map((r,idx)=>{
+    const pos = idx+1;
+    const posClass = pos===1?'gold':pos===2?'silver':pos===3?'bronze':'';
+    const playersStr = [r.team.p1,r.team.p2].filter(Boolean).join(' & ');
+    const mainVal = lbMode==='net' ? r.net : r.points;
+    const subVal = lbMode==='net' ? (r.points+' pts') : (r.net+' net');
+    return `<div class="lb-row">
+      <div class="lb-pos ${posClass}">${pos}</div>
+      <div class="lb-info">
+        <div class="lb-team">${esc(r.team.name)}</div>
+        ${playersStr ? `<div class="lb-players">${esc(playersStr)}</div>` : ''}
+      </div>
+      <div>
+        <div class="lb-val">${mainVal}</div>
+        <div class="lb-strokes">${subVal}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="panel-dark">
+      <h2>Podium</h2>
+      ${podiumHtml || '<div class="muted-dark">Need at least 3 pairs with results.</div>'}
+    </div>
+    <div class="card">
+      <div class="toggle2">
+        <button data-lb="net" class="${lbMode==='net'?'active':''}">Overall (net)</button>
+        <button data-lb="points" class="${lbMode==='points'?'active':''}">Grand Prix</button>
+      </div>
+      <h2>${lbMode==='net' ? 'Overall — net score' : 'Grand Prix — points'}</h2>
+      ${rows}
+      <div class="muted" style="margin-top:8px;">${lbMode==='net' ? 'Lowest cumulative net score leads. Net score already includes each pair\u2019s running adjustment.' : 'Points run 24 down to 2 each day (12 pairs), based on that day\u2019s net-score ranking, added up across the week.'}</div>
+    </div>
+    ${renderMatrix()}
+  `;
+}
+
+function renderMatrix(){
+  const { res } = standings();
+  const { table } = standings();
+  const sorted = [...table].sort((a,b)=> lbMode==='net' ? (a.net-b.net) : (b.points-a.points));
+  const head = state.rounds.map((r,i)=>`<th>D${i+1}</th>`).join('');
+  const rows = sorted.map(row=>{
+    const cells = state.rounds.map(r=>{
+      const rr = res[r.id];
+      if(!rr || !rr.resolved || !rr.results[row.team.id]){
+        const marker = rr && rr.blocking ? '⚑' : (rr && rr.started ? '…' : '–');
+        return `<td class="muted">${marker}</td>`;
+      }
+      const d = rr.results[row.team.id];
+      let deltaStr = '';
+      if(d.delta>0) deltaStr = `<span style="color:${'#B23A2E'}">+${d.delta}</span>`;
+      else if(d.delta<0) deltaStr = `<span style="color:#2F6B3D">${d.delta}</span>`;
+      const cellVal = lbMode==='points' ? d.points : d.net;
+      return `<td>${cellVal}<br><span style="font-size:9px;color:var(--ink-soft)">${ordinal(d.rank)} ${deltaStr}</span></td>`;
+    }).join('');
+    return `<tr><td class="team-col">${esc(row.team.name)}</td>${cells}</tr>`;
+  }).join('');
+  return `<div class="card"><h2>Day by day</h2>
+    <table class="matrix"><thead><tr><th class="team-col">Pair</th>${head}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="muted" style="margin-top:8px;">Net score and finishing position each day. ⚑ = tie awaiting countback. Red = adjustment added onto the next day's carry (1st/2nd), green = deducted (11th/12th) — this builds up across the week, not just from the day before.</div>
+  </div>`;
+}
+
+function renderScores(){
+  if(state.rounds.length===0){
+    return `<div class="card"><div class="empty">Add some rounds in Courses first.</div></div>`;
+  }
+  if(!state.activeRound || !state.rounds.find(r=>r.id===state.activeRound)){
+    state.activeRound = state.rounds[0].id;
+  }
+  const allRes = computeAllRounds();
+  const pills = state.rounds.map((r,i)=>{
+    const result = allRes[r.id];
+    const done = result.resolved;
+    const tied = result.started && !result.resolved && result.blocking;
+    const waiting = result.waitingOnEarlierDay;
+    return `<button class="round-pill ${r.id===state.activeRound?'active':''} ${done?'done':''} ${tied?'tied':''} ${waiting?'waiting':''}" data-round="${r.id}">D${i+1}</button>`;
+  }).join('');
+
+  const round = state.rounds.find(r=>r.id===state.activeRound);
+  const result = allRes[round.id];
+
+  if(result.waitingOnEarlierDay){
+    return `<div class="card">
+      <h2>${esc(round.course) || 'Course TBC'}</h2>
+      <div class="round-tabs">${pills}</div>
+      <div class="empty">An earlier day still has a tie to resolve, or scores missing — sort that day first and this one will unlock.</div>
+    </div>`;
+  }
+
+  const blockingIds = (result.blocking && result.blocking.teamIds) || [];
+  const nextLevel = result.blocking ? result.blocking.level : null;
+
+  const rows = state.teams.map(t=>{
+    const s = getScore(round.id, t.id);
+    const playersStr = [t.p1,t.p2].filter(Boolean).join(' & ');
+    const gross = hasTotal(s) ? grossTotal(s) : null;
+    const carry = (result.adjBefore && result.adjBefore[t.id]) || 0;
+    const net = gross!==null ? gross + carry : null;
+
+    let badge = '';
+    if(result.resolved && result.results[t.id]){
+      const d = result.results[t.id];
+      const dp = dailyPrize(d.rank);
+      const deltaTxt = d.delta!==0 ? (d.delta>0?' · +'+d.delta+' next day':' · '+d.delta+' next day') : '';
+      badge = `<span class="chip ${d.delta<0?'minus':d.delta>0?'plus':'flat'}">${ordinal(d.rank)}${deltaTxt} · ${d.points}pts${dp?' · '+money(dp):''}</span>`;
+    } else if(blockingIds.includes(t.id)){
+      badge = `<span class="chip tie">Tied — needs countback</span>`;
+    }
+
+    let tieHtml = '';
+    if(blockingIds.includes(t.id)){
+      if(nextLevel==='l6'){
+        tieHtml = `<div class="tiebreak-row">
+          <div class="tb-label">Countback — Last 6 (holes 13–18)</div>
+          <input type="number" inputmode="numeric" placeholder="Last 6 score" data-tb-team="${t.id}" data-tb-field="l6" value="${s.l6!==undefined?s.l6:''}">
+        </div>`;
+      } else if(nextLevel==='l3'){
+        tieHtml = `<div class="tiebreak-row">
+          <div class="tb-label">Still tied — Last 3 (holes 16–18)</div>
+          <input type="number" inputmode="numeric" placeholder="Last 3 score" data-tb-team="${t.id}" data-tb-field="l3" value="${s.l3!==undefined?s.l3:''}">
+        </div>`;
+      }
+    }
+
+    return `<div class="score-block">
+      <div class="sname">${esc(t.name)} ${badge}${playersStr?`<span class="splayers">${esc(playersStr)}</span>`:''}</div>
+      <div class="score-inputs">
+        <div class="fld"><span>Front 9</span><input type="number" inputmode="numeric" placeholder="—" data-score-team="${t.id}" data-score-field="f9" value="${s.f9!==undefined?s.f9:''}"></div>
+        <div class="fld"><span>Back 9</span><input type="number" inputmode="numeric" placeholder="—" data-score-team="${t.id}" data-score-field="b9" value="${s.b9!==undefined?s.b9:''}"></div>
+        <div class="net-box"><span>Net</span><div class="netval">${net!==null?net:'–'}</div></div>
+      </div>
+      ${carry!==0 ? `<div class="carry-note">Carrying ${carry>0?'+'+carry:carry} into today's net (gross ${gross!==null?gross:'–'} ${carry>0?'+':''}${carry} = ${net!==null?net:'–'})</div>` : ''}
+      ${tieHtml}
+    </div>`;
+  }).join('');
+
+  let statusMsg = 'Enter front 9 and back 9 for every pair. Net score updates live and includes any adjustment they\u2019re carrying.';
+  if(result.started && !result.resolved) statusMsg = 'Two or more pairs are level on net score — enter the countback score requested below for those pairs.';
+  if(result.resolved) statusMsg = 'Day complete — 1st and 2nd add a penalty onto the next day\u2019s carry, 11th and 12th add a boost, on top of whatever they were already carrying.';
+
+  return `
+    <div class="card">
+      <h2>${esc(round.course) || 'Course TBC'}</h2>
+      <div class="round-tabs">${pills}</div>
+      <div style="margin-top:14px;">${rows}</div>
+      <div class="muted" style="margin-top:10px;">${statusMsg}</div>
+    </div>
+  `;
+}
+
+function renderCourses(){
+  const rows = state.rounds.map((r,i)=>`
+    <div class="round-item">
+      <div style="flex:1;">
+        <div class="rname">Day ${i+1}</div>
+        <label style="margin-top:8px;">Course name</label>
+        <input type="text" data-course-name="${r.id}" value="${esc(r.course)}" placeholder="Course TBC">
+        <label>Date</label>
+        <input type="date" data-course-date="${r.id}" value="${esc(r.date||'')}">
+      </div>
+      <button class="icon-btn" data-del-round="${r.id}" style="align-self:flex-start;">🗑️</button>
+    </div>`).join('');
+
+  return `
+    <div class="panel-dark">
+      <h2>Courses — Day 1–${state.rounds.length}</h2>
+      ${rows || '<div class="muted-dark">No rounds yet.</div>'}
+      <button class="btn btn-ghost" id="add-round">+ Add day</button>
+    </div>
+  `;
+}
+
+function renderSetup(){
+  const teamRows = state.teams.map(t=>`
+    <div class="team-item">
+      <div class="tinfo">
+        <div class="tname">${esc(t.name)}</div>
+        <div class="tplayers">${[t.p1,t.p2].filter(Boolean).join(' & ') || 'Players not set'}</div>
+      </div>
+      <button class="icon-btn" data-edit-team="${t.id}">✏️</button>
+    </div>`).join('');
+
+  return `
+    <div class="panel-dark">
+      <h2>Pairings (${state.teams.length})</h2>
+      ${teamRows || '<div class="muted-dark">No pairs yet.</div>'}
+      <button class="btn btn-ghost" id="add-team">+ Add pair</button>
+    </div>
+    <div class="panel-dark">
+      <h2>Prizes</h2>
+      <label>Daily — 1st, 2nd, 3rd, 4th (£)</label>
+      <div class="row2">
+        <input type="number" data-prize="daily-0" value="${state.prizes.daily[0]}">
+        <input type="number" data-prize="daily-1" value="${state.prizes.daily[1]}">
+        <input type="number" data-prize="daily-2" value="${state.prizes.daily[2]}">
+        <input type="number" data-prize="daily-3" value="${state.prizes.daily[3]}">
+      </div>
+      <label>Overall — 1st, 2nd, 3rd (£)</label>
+      <div class="row2">
+        <input type="number" data-prize="overall-0" value="${state.prizes.overall[0]}">
+        <input type="number" data-prize="overall-1" value="${state.prizes.overall[1]}">
+        <input type="number" data-prize="overall-2" value="${state.prizes.overall[2]}">
+      </div>
+    </div>
+    <div class="panel-dark">
+      <h2>How scoring works</h2>
+      <div class="muted-dark" style="line-height:1.5;">
+        Pairs better-ball, stroke play: lowest of the two players' scores counts on each hole. Enter each pair's front 9 and back 9 gross total on the Daily tab.<br><br>
+        Each day's <b>net score</b> is that gross total plus whatever adjustment the pair is currently carrying. Pairs are ranked on net score. 1st adds a +2 onto their carry for the next day, 2nd a +1; 11th adds a −1, 12th a −2 — stacking on top of whatever they already had, so it keeps building across the week for a pair that keeps finishing top-2 or bottom-2. A mid-table finish (3rd–10th) leaves the running carry untouched.<br><br>
+        Each day also awards <b>Grand Prix points</b> off that same net-score ranking — 24 down to 2 in steps of 2 across the 12 pairs — which add up across the week on the Grand Prix table.<br><br>
+        <b>Countback</b> (on net score ties): best back 9, then last 6 holes, then last 3.
+      </div>
+    </div>
+    <div class="panel-dark">
+      <h2>Backup</h2>
+      <button class="btn btn-ghost" id="export-data">Export data</button>
+      <button class="btn btn-ghost" id="import-data">Import data</button>
+      <button class="btn btn-danger" id="reset-data">Reset all data</button>
+    </div>
+  `;
+}
+
+function esc(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- edit team inline ---------- */
+function editTeamInline(teamId){
+  const t = state.teams.find(x=>x.id===teamId);
+  if(!t) return;
+  const view = document.getElementById('view');
+  const wrap = document.createElement('div');
+  wrap.className = 'panel-dark';
+  wrap.style.marginTop = '14px';
+  wrap.innerHTML = `
+    <h2>Edit pair</h2>
+    <label>Pair name</label>
+    <input type="text" id="et-name" value="${esc(t.name)}">
+    <div class="row2">
+      <div><label>Player 1</label><input type="text" id="et-p1" value="${esc(t.p1)}"></div>
+      <div><label>Player 2</label><input type="text" id="et-p2" value="${esc(t.p2)}"></div>
+    </div>
+    <button class="btn btn-primary" id="et-save">Save pair</button>
+    <button class="btn btn-danger" id="et-delete">Delete pair</button>
+  `;
+  view.prepend(wrap);
+  wrap.scrollIntoView({behavior:'smooth', block:'center'});
+  document.getElementById('et-save').onclick = ()=>{
+    t.name = document.getElementById('et-name').value.trim() || t.name;
+    t.p1 = document.getElementById('et-p1').value.trim();
+    t.p2 = document.getElementById('et-p2').value.trim();
+    save(); toast('Pair saved'); render();
+  };
+  document.getElementById('et-delete').onclick = ()=>{
+    if(confirm('Delete '+t.name+'? This removes their scores from every round.')){
+      state.teams = state.teams.filter(x=>x.id!==teamId);
+      state.rounds.forEach(r=>{ if(state.scores[r.id]) delete state.scores[r.id][teamId]; });
+      save(); toast('Pair deleted'); render();
+    }
+  };
+}
+
+function attachHandlers(){
+  document.querySelectorAll('.tabbar button').forEach(b=>{
+    b.onclick = ()=>{ activeTab = b.dataset.tab; render(); window.scrollTo(0,0); };
+  });
+
+  document.querySelectorAll('[data-lb]').forEach(b=>{
+    b.onclick = ()=>{ lbMode = b.dataset.lb; render(); };
+  });
+
+  document.querySelectorAll('[data-round]').forEach(b=>{
+    b.onclick = ()=>{ state.activeRound = b.dataset.round; save(); render(); };
+  });
+  document.querySelectorAll('[data-score-team]').forEach(inp=>{
+    inp.onchange = ()=>{
+      const teamId = inp.dataset.scoreTeam;
+      const field = inp.dataset.scoreField;
+      const v = inp.value==='' ? null : parseInt(inp.value,10);
+      setScoreField(state.activeRound, teamId, field, v);
+      save(); render();
+    };
+  });
+  document.querySelectorAll('[data-tb-team]').forEach(inp=>{
+    inp.onchange = ()=>{
+      const teamId = inp.dataset.tbTeam;
+      const field = inp.dataset.tbField;
+      const v = inp.value==='' ? null : parseInt(inp.value,10);
+      setScoreField(state.activeRound, teamId, field, v);
+      save(); render();
+    };
+  });
+
+  const addRound = document.getElementById('add-round');
+  if(addRound) addRound.onclick = ()=>{
+    const r = {id:uid('r'), course:'', date:''};
+    state.rounds.push(r);
+    if(!state.activeRound) state.activeRound = r.id;
+    save(); render();
+  };
+  document.querySelectorAll('[data-course-name]').forEach(inp=>{
+    inp.onchange = ()=>{
+      const r = state.rounds.find(x=>x.id===inp.dataset.courseName);
+      r.course = inp.value.trim();
+      save(); render();
+    };
+  });
+  document.querySelectorAll('[data-course-date]').forEach(inp=>{
+    inp.onchange = ()=>{
+      const r = state.rounds.find(x=>x.id===inp.dataset.courseDate);
+      r.date = inp.value;
+      save();
+    };
+  });
+  document.querySelectorAll('[data-del-round]').forEach(b=>{
+    b.onclick = ()=>{
+      const rid = b.dataset.delRound;
+      const r = state.rounds.find(x=>x.id===rid);
+      if(confirm('Delete this day'+(r.course?' ('+r.course+')':'')+' and its scores?')){
+        state.rounds = state.rounds.filter(x=>x.id!==rid);
+        delete state.scores[rid];
+        if(state.activeRound===rid) state.activeRound = state.rounds[0] ? state.rounds[0].id : null;
+        save(); render();
+      }
+    };
+  });
+
+  const addTeam = document.getElementById('add-team');
+  if(addTeam) addTeam.onclick = ()=>{
+    state.teams.push({id:uid('t'), name:'Pair '+(state.teams.length+1), p1:'', p2:''});
+    save(); render();
+  };
+  document.querySelectorAll('[data-edit-team]').forEach(b=>{
+    b.onclick = ()=> editTeamInline(b.dataset.editTeam);
+  });
+  document.querySelectorAll('[data-prize]').forEach(inp=>{
+    inp.onchange = ()=>{
+      const [group, idx] = inp.dataset.prize.split('-');
+      const v = parseInt(inp.value,10);
+      state.prizes[group][parseInt(idx,10)] = isNaN(v) ? 0 : v;
+      save(); render();
+    };
+  });
+
+  const expBtn = document.getElementById('export-data');
+  if(expBtn) expBtn.onclick = ()=>{
+    const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'scottish-pairs-2026-backup.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('Backup downloaded');
+  };
+  const impBtn = document.getElementById('import-data');
+  if(impBtn) impBtn.onclick = ()=>{
+    const inputEl = document.createElement('input');
+    inputEl.type = 'file'; inputEl.accept = 'application/json';
+    inputEl.onchange = ()=>{
+      const file = inputEl.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const data = JSON.parse(reader.result);
+          if(!data.teams || !data.rounds) throw new Error('bad file');
+          state = data; save(); toast('Data imported'); render();
+        }catch(e){ alert('That file could not be read as a Scottish Pairs backup.'); }
+      };
+      reader.readAsText(file);
+    };
+    inputEl.click();
+  };
+  const resetBtn = document.getElementById('reset-data');
+  if(resetBtn) resetBtn.onclick = ()=>{
+    if(confirm('Reset all pairs, rounds and scores for EVERYONE using this link? This cannot be undone.')){
+      state = defaultState(); save(); toast('Reset'); render();
+    }
+  };
+}
+
+/* ---------- dynamic manifest (installable PWA, single file) ---------- */
+(function(){
+  const iconSvg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230065BD'/><line x1='6' y1='6' x2='94' y2='94' stroke='white' stroke-width='20'/><line x1='94' y1='6' x2='6' y2='94' stroke='white' stroke-width='20'/></svg>";
+  const iconUrl = "data:image/svg+xml," + iconSvg;
+  const manifest = {
+    name: "Scottish Pairs 2026",
+    short_name: "Scottish Pairs",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0F2418",
+    theme_color: "#0F2418",
+    icons: [ { src: iconUrl, sizes: "any", type: "image/svg+xml" } ]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'});
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = URL.createObjectURL(blob);
+  document.head.appendChild(link);
+})();
+
+document.getElementById('view').innerHTML = '<div class="card"><div class="empty">Loading…</div></div>';
+</script>
+</body>
+</html>
