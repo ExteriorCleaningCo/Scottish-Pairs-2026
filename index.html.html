@@ -637,22 +637,7 @@ function renderScores(){
       const deltaTxt = d.delta!==0 ? (d.delta>0?' · +'+d.delta+' next day':' · '+d.delta+' next day') : '';
       badge = `<span class="chip ${d.delta<0?'minus':d.delta>0?'plus':'flat'}">${ordinal(d.rank)}${deltaTxt} · ${d.points}pts${dp?' · '+money(dp):''}</span>`;
     } else if(blockingIds.includes(t.id)){
-      badge = `<span class="chip tie">Tied — needs countback</span>`;
-    }
-
-    let tieHtml = '';
-    if(blockingIds.includes(t.id)){
-      if(nextLevel==='l6'){
-        tieHtml = `<div class="tiebreak-row">
-          <div class="tb-label">Countback — Last 6 (holes 13–18)</div>
-          <input type="number" inputmode="numeric" placeholder="Last 6 score" data-tb-team="${t.id}" data-tb-field="l6" value="${s.l6!==undefined?s.l6:''}">
-        </div>`;
-      } else if(nextLevel==='l3'){
-        tieHtml = `<div class="tiebreak-row">
-          <div class="tb-label">Still tied — Last 3 (holes 16–18)</div>
-          <input type="number" inputmode="numeric" placeholder="Last 3 score" data-tb-team="${t.id}" data-tb-field="l3" value="${s.l3!==undefined?s.l3:''}">
-        </div>`;
-      }
+      badge = `<span class="chip tie">Tied — see countback above</span>`;
     }
 
     return `<div class="score-block">
@@ -663,7 +648,6 @@ function renderScores(){
         <div class="net-box"><span>Net</span><div class="netval">${net!==null?net:'–'}</div></div>
       </div>
       ${carry!==0 ? `<div class="carry-note">Carrying ${carry>0?'+'+carry:carry} into today's net (gross ${gross!==null?gross:'–'} ${carry>0?'+':''}${carry} = ${net!==null?net:'–'})</div>` : ''}
-      ${tieHtml}
     </div>`;
   }
 
@@ -678,6 +662,8 @@ function renderScores(){
       <button class="btn btn-ghost" data-goto-courses="1">Edit course details</button>
     </div>`;
 
+  // Winners box — always present. Fills in once the day resolves.
+  let winnersBox;
   if(result.resolved){
     const ranked = state.teams.map(t=>({t, d:result.results[t.id]})).sort((a,b)=>a.d.rank-b.d.rank);
     const winners = ranked.filter(r=>dailyPrize(r.d.rank));
@@ -686,49 +672,68 @@ function renderScores(){
       const dp = dailyPrize(d.rank);
       return `<div class="lb-row">
         <div class="lb-pos ${posClass}">${d.rank}</div>
-        <div class="lb-info">
-          <div class="lb-team">${esc(t.name)}</div>
-        </div>
+        <div class="lb-info"><div class="lb-team">${esc(t.name)}</div></div>
         <div>
           <div class="lb-val">${d.net}</div>
           <div class="lb-strokes">${dp?money(dp):d.points+' pts'}</div>
         </div>
       </div>`;
     }).join('');
-
-    const options = ranked.map(({t,d})=>`<option value="${t.id}" ${scoresDropdownTeam===t.id?'selected':''}>${ordinal(d.rank)} — ${esc(t.name)}</option>`).join('');
-    const selectedTeam = scoresDropdownTeam ? state.teams.find(t=>t.id===scoresDropdownTeam) : null;
-
-    return `
-      ${courseHeader}
-      <div class="card">
-        <h2>Day ${dayIdx+1} winners</h2>
-        ${winnerRows}
-        <div class="muted" style="margin-top:8px;">Day complete — 1st and 2nd add a penalty onto the next day\u2019s carry, 11th and 12th add a boost, on top of whatever they were already carrying.</div>
-      </div>
-      <div class="card">
-        <h2>Check or correct a score</h2>
-        <label>Pair</label>
-        <select id="score-team-picker">
-          <option value="">Select a pair…</option>
-          ${options}
-        </select>
-        ${selectedTeam ? `<div style="margin-top:10px;">${teamBlock(selectedTeam)}</div>` : ''}
-      </div>
-    `;
+    winnersBox = `<div class="card">
+      <h2>Day ${dayIdx+1} winners</h2>
+      ${winnerRows}
+      <div class="muted" style="margin-top:8px;">Day complete — 1st and 2nd add a penalty onto the next day\u2019s carry, 11th and 12th add a boost, on top of whatever they were already carrying.</div>
+    </div>`;
+  } else {
+    winnersBox = `<div class="card">
+      <h2>Day ${dayIdx+1} winners</h2>
+      <div class="empty">Winners appear here once every pair has a score in and any ties are settled.</div>
+    </div>`;
   }
 
-  const rows = state.teams.map(teamBlock).join('');
-  let statusMsg = 'Enter front 9 and back 9 for every pair. Net score updates live and includes any adjustment they\u2019re carrying.';
-  if(result.started && !result.resolved) statusMsg = 'Two or more pairs are level on net score — enter the countback score requested below for those pairs.';
+  // Tie alert — pops up front-and-centre whenever a countback is needed.
+  let tieBox = '';
+  if(result.started && !result.resolved && result.blocking){
+    const tiedTeams = state.teams.filter(t=>blockingIds.includes(t.id));
+    const levelLabel = nextLevel==='l6' ? 'Last 6 (holes 13–18)' : 'Last 3 (holes 16–18)';
+    const rows2 = tiedTeams.map(t=>{
+      const s = getScore(round.id, t.id);
+      const val = nextLevel==='l6' ? s.l6 : s.l3;
+      return `<div style="margin-top:10px;">
+        <div class="tb-label" style="margin-bottom:4px;">${esc(t.name)}</div>
+        <input type="number" inputmode="numeric" placeholder="${levelLabel} score" data-tb-team="${t.id}" data-tb-field="${nextLevel}" value="${val!==undefined?val:''}">
+      </div>`;
+    }).join('');
+    tieBox = `<div class="card" style="border:2px solid #C9A83A;">
+      <h2>⚑ Countback needed</h2>
+      <div class="muted">${tiedTeams.length} pairs are level on net score. Enter their ${levelLabel} gross score to split them.</div>
+      ${rows2}
+    </div>`;
+  }
 
-  return `
-    ${courseHeader}
-    <div class="card">
-      <div style="margin-top:0;">${rows}</div>
-      <div class="muted" style="margin-top:10px;">${statusMsg}</div>
-    </div>
-  `;
+  // Enter or check score — always a dropdown, never the full list.
+  const ranked2 = state.teams.map(t=>{
+    const d = result.resolved ? result.results[t.id] : null;
+    return { t, rank: d ? d.rank : null };
+  }).sort((a,b)=>{
+    if(a.rank && b.rank) return a.rank-b.rank;
+    if(a.rank) return -1;
+    if(b.rank) return 1;
+    return a.t.name.localeCompare(b.t.name);
+  });
+  const options = ranked2.map(({t,rank})=>`<option value="${t.id}" ${scoresDropdownTeam===t.id?'selected':''}>${rank?ordinal(rank)+' — ':''}${esc(t.name)}</option>`).join('');
+  const selectedTeam = scoresDropdownTeam ? state.teams.find(t=>t.id===scoresDropdownTeam) : null;
+  const scoreBox = `<div class="card">
+    <h2>Enter or check score</h2>
+    <label>Pair</label>
+    <select id="score-team-picker">
+      <option value="">Select a pair…</option>
+      ${options}
+    </select>
+    ${selectedTeam ? `<div style="margin-top:10px;">${teamBlock(selectedTeam)}</div>` : '<div class="muted" style="margin-top:8px;">Pick a pair to enter or check their front 9 / back 9.</div>'}
+  </div>`;
+
+  return `${courseHeader}${winnersBox}${tieBox}${scoreBox}`;
 }
 
 function renderCourses(){
