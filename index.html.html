@@ -308,6 +308,25 @@ function setConnStatus(mode){
   else el.innerHTML = '🔴 Offline — edits saved to this device only';
 }
 
+// If a Firestore update lands while the user has a form field focused (picking a date,
+// mid-keystroke in a number field), rebuilding the DOM right then kills native pickers
+// and drops the interaction. Defer the render until they're done with that field.
+let interacting = false;
+let renderPending = false;
+document.addEventListener('focusin', (e)=>{
+  if(e.target.matches && e.target.matches('#view input, #view select')) interacting = true;
+});
+document.addEventListener('focusout', (e)=>{
+  if(e.target.matches && e.target.matches('#view input, #view select')){
+    interacting = false;
+    if(renderPending){ renderPending = false; render(); }
+  }
+});
+function safeRender(){
+  if(interacting) renderPending = true;
+  else render();
+}
+
 onSnapshot(stateRef, { includeMetadataChanges: true }, (snap)=>{
   // Our own writes echo straight back with hasPendingWrites=true — we've already
   // rendered those optimistically below, so skip the rebuild and just keep the
@@ -326,7 +345,7 @@ onSnapshot(stateRef, { includeMetadataChanges: true }, (snap)=>{
   const changed = runMigrations();
   ready = true;
   setConnStatus('live');
-  if(changed) save(); else render();
+  if(changed) save(); else safeRender();
 }, (err)=>{
   console.error(err);
   setConnStatus('error');
