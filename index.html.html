@@ -121,7 +121,7 @@ nav.tabbar button.active{background:rgba(216,178,76,0.14); color:var(--gold);}
 /* Forms */
 label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--ink-soft); margin:10px 0 4px;}
 label:first-child{margin-top:0;}
-input[type=text], input[type=number], input[type=date]{
+input[type=text], input[type=number], input[type=date], select{
   width:100%; padding:10px 12px; border-radius:9px; border:1px solid #D8CDA9;
   background:#FBF8EF; font-family:'Inter',sans-serif; font-size:15px; color:var(--ink);
 }
@@ -487,6 +487,7 @@ function standings(){
 /* ---------- rendering ---------- */
 let activeTab = 'leaderboard';
 let lbMode = 'net'; // net | points
+let scoresDropdownTeam = null;
 
 function render(){
   document.querySelectorAll('.tabbar button').forEach(b=>{
@@ -622,7 +623,7 @@ function renderScores(){
   const blockingIds = (result.blocking && result.blocking.teamIds) || [];
   const nextLevel = result.blocking ? result.blocking.level : null;
 
-  const rows = state.teams.map(t=>{
+  function teamBlock(t){
     const s = getScore(round.id, t.id);
     const playersStr = [t.p1,t.p2].filter(Boolean).join(' & ');
     const gross = hasTotal(s) ? grossTotal(s) : null;
@@ -664,23 +665,65 @@ function renderScores(){
       ${carry!==0 ? `<div class="carry-note">Carrying ${carry>0?'+'+carry:carry} into today's net (gross ${gross!==null?gross:'–'} ${carry>0?'+':''}${carry} = ${net!==null?net:'–'})</div>` : ''}
       ${tieHtml}
     </div>`;
-  }).join('');
-
-  let statusMsg = 'Enter front 9 and back 9 for every pair. Net score updates live and includes any adjustment they\u2019re carrying.';
-  if(result.started && !result.resolved) statusMsg = 'Two or more pairs are level on net score — enter the countback score requested below for those pairs.';
-  if(result.resolved) statusMsg = 'Day complete — 1st and 2nd add a penalty onto the next day\u2019s carry, 11th and 12th add a boost, on top of whatever they were already carrying.';
+  }
 
   const dayIdx = state.rounds.findIndex(r=>r.id===round.id);
-  const dateStr = round.date ? new Date(round.date+'T00:00:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'}) : 'Date TBC';
-
-  return `
+  const dateStr2 = round.date ? new Date(round.date+'T00:00:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'}) : 'Date TBC';
+  const courseHeader = `
     <div class="panel-dark">
       <h2>Day ${dayIdx+1}</h2>
       <div style="font-family:'Big Shoulders',sans-serif; font-size:26px; font-weight:900; text-transform:uppercase; color:var(--paper); line-height:1;">${esc(round.course) || 'Course TBC'}</div>
-      <div class="muted-dark" style="margin-top:4px;">${esc(dateStr)}</div>
+      <div class="muted-dark" style="margin-top:4px;">${esc(dateStr2)}</div>
       <div class="round-tabs" style="margin-top:14px;">${pills}</div>
       <button class="btn btn-ghost" data-goto-courses="1">Edit course details</button>
-    </div>
+    </div>`;
+
+  if(result.resolved){
+    const ranked = state.teams.map(t=>({t, d:result.results[t.id]})).sort((a,b)=>a.d.rank-b.d.rank);
+    const winners = ranked.filter(r=>dailyPrize(r.d.rank));
+    const winnerRows = winners.map(({t,d})=>{
+      const posClass = d.rank===1?'gold':d.rank===2?'silver':d.rank===3?'bronze':'';
+      const dp = dailyPrize(d.rank);
+      return `<div class="lb-row">
+        <div class="lb-pos ${posClass}">${d.rank}</div>
+        <div class="lb-info">
+          <div class="lb-team">${esc(t.name)}</div>
+        </div>
+        <div>
+          <div class="lb-val">${d.net}</div>
+          <div class="lb-strokes">${dp?money(dp):d.points+' pts'}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const options = ranked.map(({t,d})=>`<option value="${t.id}" ${scoresDropdownTeam===t.id?'selected':''}>${ordinal(d.rank)} — ${esc(t.name)}</option>`).join('');
+    const selectedTeam = scoresDropdownTeam ? state.teams.find(t=>t.id===scoresDropdownTeam) : null;
+
+    return `
+      ${courseHeader}
+      <div class="card">
+        <h2>Day ${dayIdx+1} winners</h2>
+        ${winnerRows}
+        <div class="muted" style="margin-top:8px;">Day complete — 1st and 2nd add a penalty onto the next day\u2019s carry, 11th and 12th add a boost, on top of whatever they were already carrying.</div>
+      </div>
+      <div class="card">
+        <h2>Check or correct a score</h2>
+        <label>Pair</label>
+        <select id="score-team-picker">
+          <option value="">Select a pair…</option>
+          ${options}
+        </select>
+        ${selectedTeam ? `<div style="margin-top:10px;">${teamBlock(selectedTeam)}</div>` : ''}
+      </div>
+    `;
+  }
+
+  const rows = state.teams.map(teamBlock).join('');
+  let statusMsg = 'Enter front 9 and back 9 for every pair. Net score updates live and includes any adjustment they\u2019re carrying.';
+  if(result.started && !result.resolved) statusMsg = 'Two or more pairs are level on net score — enter the countback score requested below for those pairs.';
+
+  return `
+    ${courseHeader}
     <div class="card">
       <div style="margin-top:0;">${rows}</div>
       <div class="muted" style="margin-top:10px;">${statusMsg}</div>
@@ -813,8 +856,10 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-round]').forEach(b=>{
-    b.onclick = ()=>{ state.activeRound = b.dataset.round; save(); render(); };
+    b.onclick = ()=>{ state.activeRound = b.dataset.round; scoresDropdownTeam = null; save(); render(); };
   });
+  const teamPicker = document.getElementById('score-team-picker');
+  if(teamPicker) teamPicker.onchange = ()=>{ scoresDropdownTeam = teamPicker.value || null; render(); };
   const gotoCourses = document.querySelector('[data-goto-courses]');
   if(gotoCourses) gotoCourses.onclick = ()=>{ activeTab = 'courses'; render(); window.scrollTo(0,0); };
   document.querySelectorAll('[data-score-team]').forEach(inp=>{
