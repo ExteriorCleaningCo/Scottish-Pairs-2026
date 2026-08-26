@@ -211,7 +211,7 @@ input:focus{outline:2px solid var(--gold); outline-offset:1px;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // ---- Firebase project config ----
 // Create a project at https://console.firebase.google.com, add a Web App,
@@ -226,7 +226,7 @@ const firebaseConfig = {
 };
 
 const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
+const db = initializeFirestore(fbApp, { localCache: persistentLocalCache() });
 const stateRef = doc(db, "competition", "scottishPairs2026");
 
 const SCORE_MODEL = 'net-v1';
@@ -308,7 +308,15 @@ function setConnStatus(mode){
   else el.innerHTML = '🔴 Offline — edits saved to this device only';
 }
 
-onSnapshot(stateRef, (snap)=>{
+onSnapshot(stateRef, { includeMetadataChanges: true }, (snap)=>{
+  // Our own writes echo straight back with hasPendingWrites=true — we've already
+  // rendered those optimistically below, so skip the rebuild and just keep the
+  // in-memory state in sync. This is what stops open date pickers / focused
+  // inputs from being torn down mid-interaction.
+  if(snap.metadata.hasPendingWrites){
+    if(snap.exists()) state = snap.data();
+    return;
+  }
   if(snap.exists()){
     state = snap.data();
   } else {
@@ -329,6 +337,7 @@ setConnStatus('connecting');
 function money(n){ return '£'+Number(n||0).toLocaleString('en-GB'); }
 function dailyPrize(rank){ const p = state.prizes.daily; return (rank>=1 && rank<=p.length) ? p[rank-1] : null; }
 function overallPrize(pos){ const p = state.prizes.overall; return (pos>=1 && pos<=p.length) ? p[pos-1] : null; }
+
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -582,9 +591,11 @@ function renderScores(){
   const result = allRes[round.id];
 
   if(result.waitingOnEarlierDay){
-    return `<div class="card">
-      <h2>${esc(round.course) || 'Course TBC'}</h2>
-      <div class="round-tabs">${pills}</div>
+    const dayIdx = state.rounds.findIndex(r=>r.id===round.id);
+    return `<div class="panel-dark">
+      <h2>Day ${dayIdx+1}</h2>
+      <div style="font-family:'Big Shoulders',sans-serif; font-size:26px; font-weight:900; text-transform:uppercase; color:var(--paper); line-height:1;">${esc(round.course) || 'Course TBC'}</div>
+      <div class="round-tabs" style="margin-top:14px;">${pills}</div>
       <div class="empty">An earlier day still has a tie to resolve, or scores missing — sort that day first and this one will unlock.</div>
     </div>`;
   }
@@ -640,11 +651,19 @@ function renderScores(){
   if(result.started && !result.resolved) statusMsg = 'Two or more pairs are level on net score — enter the countback score requested below for those pairs.';
   if(result.resolved) statusMsg = 'Day complete — 1st and 2nd add a penalty onto the next day\u2019s carry, 11th and 12th add a boost, on top of whatever they were already carrying.';
 
+  const dayIdx = state.rounds.findIndex(r=>r.id===round.id);
+  const dateStr = round.date ? new Date(round.date+'T00:00:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'}) : 'Date TBC';
+
   return `
+    <div class="panel-dark">
+      <h2>Day ${dayIdx+1}</h2>
+      <div style="font-family:'Big Shoulders',sans-serif; font-size:26px; font-weight:900; text-transform:uppercase; color:var(--paper); line-height:1;">${esc(round.course) || 'Course TBC'}</div>
+      <div class="muted-dark" style="margin-top:4px;">${esc(dateStr)}</div>
+      <div class="round-tabs" style="margin-top:14px;">${pills}</div>
+      <button class="btn btn-ghost" data-goto-courses="1">Edit course details</button>
+    </div>
     <div class="card">
-      <h2>${esc(round.course) || 'Course TBC'}</h2>
-      <div class="round-tabs">${pills}</div>
-      <div style="margin-top:14px;">${rows}</div>
+      <div style="margin-top:0;">${rows}</div>
       <div class="muted" style="margin-top:10px;">${statusMsg}</div>
     </div>
   `;
@@ -714,6 +733,11 @@ function renderSetup(){
       </div>
     </div>
     <div class="panel-dark">
+      <h2>Testing</h2>
+      <div class="muted-dark">Wipe every score so you can run a test round, without touching pairings, courses or prizes.</div>
+      <button class="btn btn-ghost" id="reset-scores">Reset all scores</button>
+    </div>
+    <div class="panel-dark">
       <h2>Backup</h2>
       <button class="btn btn-ghost" id="export-data">Export data</button>
       <button class="btn btn-ghost" id="import-data">Import data</button>
@@ -772,6 +796,8 @@ function attachHandlers(){
   document.querySelectorAll('[data-round]').forEach(b=>{
     b.onclick = ()=>{ state.activeRound = b.dataset.round; save(); render(); };
   });
+  const gotoCourses = document.querySelector('[data-goto-courses]');
+  if(gotoCourses) gotoCourses.onclick = ()=>{ activeTab = 'courses'; render(); window.scrollTo(0,0); };
   document.querySelectorAll('[data-score-team]').forEach(inp=>{
     inp.onchange = ()=>{
       const teamId = inp.dataset.scoreTeam;
@@ -809,7 +835,7 @@ function attachHandlers(){
     inp.onchange = ()=>{
       const r = state.rounds.find(x=>x.id===inp.dataset.courseDate);
       r.date = inp.value;
-      save();
+      save(); render();
     };
   });
   document.querySelectorAll('[data-del-round]').forEach(b=>{
@@ -870,6 +896,14 @@ function attachHandlers(){
       reader.readAsText(file);
     };
     inputEl.click();
+  };
+  const resetScoresBtn = document.getElementById('reset-scores');
+  if(resetScoresBtn) resetScoresBtn.onclick = ()=>{
+    if(confirm('Clear every score for EVERYONE using this link? Pairings, courses and prizes stay as they are. This cannot be undone.')){
+      state.scores = {};
+      state.activeRound = state.rounds[0] ? state.rounds[0].id : null;
+      save(); toast('Scores reset'); render();
+    }
   };
   const resetBtn = document.getElementById('reset-data');
   if(resetBtn) resetBtn.onclick = ()=>{
