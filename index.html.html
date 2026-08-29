@@ -240,7 +240,7 @@ function defaultState(){
   const courseNames = ['Kirriemuir','Alyth','Strathmore','Forfar','Blairgowrie'];
   const rounds = Array.from({length:DEFAULT_ROUNDS}, (_,i)=>({id:uid('r'), course:courseNames[i]||'', date:''}));
   const prizes = { daily:[60,40,30,20], overall:[200,150,100] };
-  return { teams, rounds, scores:{}, prizes, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
+  return { teams, rounds, scores:{}, prizes, manualPenalties:{}, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
 }
 function defaultPairNames(){
   return [
@@ -257,6 +257,7 @@ let ready = false;
 function runMigrations(){
   let changed = false;
   if(!state.prizes){ state.prizes = { daily:[60,40,30,20], overall:[200,150,100] }; changed = true; }
+  if(!state.manualPenalties){ state.manualPenalties = {}; changed = true; }
 
   // Patch any still-default "Pair N" slots (untouched, no players) with the real pairings.
   const pairNames = defaultPairNames();
@@ -416,9 +417,17 @@ function buildOrder(entries){
   return { resolved: !blocking, clusters, blocking };
 }
 
+function manualPenalty(roundId, teamId){
+  const m = state.manualPenalties && state.manualPenalties[roundId];
+  return (m && typeof m[teamId]==='number') ? m[teamId] : 0;
+}
+
 // Walks rounds in day order, carrying each pair's running adjustment forward.
 // A top-2/bottom-2 finish adds/subtracts its delta from whatever the pair is already
 // carrying (stacks); any other finish leaves the running carry untouched.
+// A manual penalty (set per-round) is folded into that one round's net alongside the
+// carry, but — unlike the carry — is never added into what's carried into the next
+// round, so it applies for exactly one day and then disappears on its own.
 function computeAllRounds(){
   const n = state.teams.length;
   let carry = {}; state.teams.forEach(t=> carry[t.id]=0);
@@ -439,7 +448,10 @@ function computeAllRounds(){
       chainBroken = true;
       return;
     }
-    const entries = rawEntries.map(e=> ({...e, net: e.gross + carry[e.teamId], adjBefore: carry[e.teamId]}));
+    const entries = rawEntries.map(e=>{
+      const manual = manualPenalty(r.id, e.teamId);
+      return { ...e, net: e.gross + carry[e.teamId] + manual, adjBefore: carry[e.teamId], manual };
+    });
     const { resolved, clusters, blocking } = buildOrder(entries);
     if(!resolved){
       out[r.id] = { started:true, resolved:false, blocking, results:null, adjBefore:{...carry} };
@@ -456,7 +468,7 @@ function computeAllRounds(){
       else if(rank===n-1) delta=-1; else if(rank===n) delta=-2;
       cluster.forEach(e=>{
         const points = (n - rank + 1) * 2;
-        results[e.teamId] = { rank, gross:e.gross, adjBefore:e.adjBefore, net:e.net, delta, points, tied: cluster.length>1 };
+        results[e.teamId] = { rank, gross:e.gross, adjBefore:e.adjBefore, manual:e.manual, net:e.net, delta, points, tied: cluster.length>1 };
         nextCarry[e.teamId] = carry[e.teamId] + delta;
       });
       pos += cluster.length;
@@ -628,7 +640,8 @@ function renderScores(){
     const playersStr = [t.p1,t.p2].filter(Boolean).join(' & ');
     const gross = hasTotal(s) ? grossTotal(s) : null;
     const carry = (result.adjBefore && result.adjBefore[t.id]) || 0;
-    const net = gross!==null ? gross + carry : null;
+    const manual = manualPenalty(round.id, t.id);
+    const net = gross!==null ? gross + carry + manual : null;
 
     let badge = '';
     if(result.resolved && result.results[t.id]){
@@ -639,6 +652,7 @@ function renderScores(){
     } else if(blockingIds.includes(t.id)){
       badge = `<span class="chip tie">Tied — see countback above</span>`;
     }
+    if(manual!==0) badge += ` <span class="chip plus">+${manual} manual penalty</span>`;
 
     return `<div class="score-block">
       <div class="sname">${esc(t.name)} ${badge}${playersStr?`<span class="splayers">${esc(playersStr)}</span>`:''}</div>
@@ -647,7 +661,7 @@ function renderScores(){
         <div class="fld"><span>Back 9</span><input type="number" inputmode="numeric" placeholder="—" data-score-team="${t.id}" data-score-field="b9" value="${s.b9!==undefined?s.b9:''}"></div>
         <div class="net-box"><span>Net</span><div class="netval">${net!==null?net:'–'}</div></div>
       </div>
-      ${carry!==0 ? `<div class="carry-note">Carrying ${carry>0?'+'+carry:carry} into today's net (gross ${gross!==null?gross:'–'} ${carry>0?'+':''}${carry} = ${net!==null?net:'–'})</div>` : ''}
+      ${(carry!==0||manual!==0) ? `<div class="carry-note">${carry!==0?`Carrying ${carry>0?'+'+carry:carry}`:''}${carry!==0&&manual!==0?' + ':''}${manual!==0?`${manual>0?'+'+manual:manual} manual penalty`:''} into today's net (gross ${gross!==null?gross:'–'} ${carry>=0?'+':''}${carry}${manual!==0?(manual>=0?' +'+manual:' '+manual):''} = ${net!==null?net:'–'})</div>` : ''}
     </div>`;
   }
 
@@ -672,7 +686,7 @@ function renderScores(){
       const dp = dailyPrize(d.rank);
       return `<div class="lb-row">
         <div class="lb-pos ${posClass}">${d.rank}</div>
-        <div class="lb-info"><div class="lb-team">${esc(t.name)}</div></div>
+        <div class="lb-info"><div class="lb-team">${esc(t.name)}${d.manual?` <span class="chip plus" style="margin-left:4px;">+${d.manual} manual</span>`:''}</div></div>
         <div>
           <div class="lb-val">${d.net}</div>
           <div class="lb-strokes">${dp?money(dp):d.points+' pts'}</div>
@@ -733,7 +747,34 @@ function renderScores(){
     ${selectedTeam ? `<div style="margin-top:10px;">${teamBlock(selectedTeam)}</div>` : '<div class="muted" style="margin-top:8px;">Pick a pair to enter or check their front 9 / back 9.</div>'}
   </div>`;
 
-  return `${courseHeader}${winnersBox}${tieBox}${scoreBox}`;
+  // Manual penalty — a one-off extra applied to THIS day's net only, for an
+  // exceptional score. Doesn't feed into the running carry, so it's gone again
+  // from the day after.
+  const currentPenalties = state.manualPenalties[round.id] || {};
+  const penaltyRows = Object.keys(currentPenalties).map(teamId=>{
+    const t = state.teams.find(x=>x.id===teamId);
+    if(!t) return '';
+    return `<div class="team-item">
+      <div class="tinfo"><div class="tname" style="color:var(--paper);">${esc(t.name)}</div><div class="tplayers">+${currentPenalties[teamId]} shots, this day only</div></div>
+      <button class="icon-btn" data-del-manual="${teamId}">🗑️</button>
+    </div>`;
+  }).join('');
+  const penaltyOptions = state.teams.filter(t=>currentPenalties[t.id]===undefined).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  const manualBox = `<div class="panel-dark">
+    <h2>Manual penalty</h2>
+    <div class="muted-dark">For an exceptional score — adds extra shots to a pair's net for this day only. Doesn't carry into the day after.</div>
+    ${penaltyRows}
+    <label>Pair</label>
+    <select id="manual-team-picker">
+      <option value="">Select a pair…</option>
+      ${penaltyOptions}
+    </select>
+    <label>Extra shots</label>
+    <input type="number" inputmode="numeric" id="manual-amount" placeholder="e.g. 3">
+    <button class="btn btn-ghost" id="add-manual">Add penalty</button>
+  </div>`;
+
+  return `${courseHeader}${winnersBox}${tieBox}${scoreBox}${manualBox}`;
 }
 
 function renderCourses(){
@@ -867,6 +908,25 @@ function attachHandlers(){
   if(teamPicker) teamPicker.onchange = ()=>{ scoresDropdownTeam = teamPicker.value || null; render(); };
   const gotoCourses = document.querySelector('[data-goto-courses]');
   if(gotoCourses) gotoCourses.onclick = ()=>{ activeTab = 'courses'; render(); window.scrollTo(0,0); };
+  const addManualBtn = document.getElementById('add-manual');
+  if(addManualBtn) addManualBtn.onclick = ()=>{
+    const teamSel = document.getElementById('manual-team-picker');
+    const amtInp = document.getElementById('manual-amount');
+    const teamId = teamSel.value;
+    const amt = parseInt(amtInp.value,10);
+    if(!teamId){ toast('Pick a pair first'); return; }
+    if(isNaN(amt) || amt===0){ toast('Enter a shots amount'); return; }
+    if(!state.manualPenalties[state.activeRound]) state.manualPenalties[state.activeRound] = {};
+    state.manualPenalties[state.activeRound][teamId] = amt;
+    save(); toast('Manual penalty added'); render();
+  };
+  document.querySelectorAll('[data-del-manual]').forEach(b=>{
+    b.onclick = ()=>{
+      const teamId = b.dataset.delManual;
+      if(state.manualPenalties[state.activeRound]) delete state.manualPenalties[state.activeRound][teamId];
+      save(); toast('Removed'); render();
+    };
+  });
   document.querySelectorAll('[data-score-team]').forEach(inp=>{
     inp.onchange = ()=>{
       const teamId = inp.dataset.scoreTeam;
