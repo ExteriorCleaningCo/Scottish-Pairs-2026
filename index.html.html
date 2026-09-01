@@ -212,7 +212,7 @@ input:focus{outline:2px solid var(--gold); outline-offset:1px;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, doc, setDoc, updateDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // ---- Firebase project config ----
 // Create a project at https://console.firebase.google.com, add a Web App,
@@ -247,7 +247,7 @@ function defaultState(){
   const courseNames = ['Kirriemuir','Alyth','Strathmore','Forfar','Blairgowrie'];
   const rounds = Array.from({length:DEFAULT_ROUNDS}, (_,i)=>({id:uid('r'), course:courseNames[i]||'', date:''}));
   const prizes = { daily:[60,40,30,20], overall:[200,150,100] };
-  return { teams, rounds, scores:{}, prizes, manualPenalties:{}, betting:{markets:{}, bets:[]}, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
+  return { teams, rounds, scores:{}, prizes, manualPenalties:{}, betting:{markets:{}, bets:{}}, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
 }
 function defaultPairNames(){
   return [
@@ -265,7 +265,15 @@ function runMigrations(){
   let changed = false;
   if(!state.prizes){ state.prizes = { daily:[60,40,30,20], overall:[200,150,100] }; changed = true; }
   if(!state.manualPenalties){ state.manualPenalties = {}; changed = true; }
-  if(!state.betting){ state.betting = {markets:{}, bets:[]}; changed = true; }
+  if(!state.betting){ state.betting = {markets:{}, bets:{}}; changed = true; }
+  if(Array.isArray(state.betting.bets)){
+    // Migrate from the old array-based bets (which could clobber concurrent bets)
+    // to a keyed map, so each bet lives at its own safe-to-update path.
+    const asMap = {};
+    state.betting.bets.forEach(b=>{ if(b && b.id) asMap[b.id] = b; });
+    state.betting.bets = asMap;
+    changed = true;
+  }
 
   // Patch any still-default "Pair N" slots (untouched, no players) with the real pairings.
   const pairNames = defaultPairNames();
@@ -299,8 +307,25 @@ function runMigrations(){
   return changed;
 }
 
+// Full-document save — used for admin-only, infrequent, single-editor operations
+// (pairings, courses, prizes, resets, imports) where a whole-state overwrite is fine.
 function save(){
   setDoc(stateRef, state).then(()=>{
+    setConnStatus('live');
+  }).catch(err=>{
+    console.error(err);
+    setConnStatus('error');
+    toast('Could not sync — check connection');
+  });
+}
+
+// Targeted field update — used for anything multiple people can be doing at once
+// (entering scores, placing bets, countback, manual adjustments). Only touches the
+// exact dot-paths given, so two people editing different things at the same moment
+// can never clobber each other, unlike a full-document save which replaces
+// everything with whatever that one client last had in memory.
+function saveField(updates){
+  updateDoc(stateRef, updates).then(()=>{
     setConnStatus('live');
   }).catch(err=>{
     console.error(err);
@@ -386,6 +411,13 @@ function setScoreField(roundId, teamId, field, val){
   if(!state.scores[roundId][teamId]) state.scores[roundId][teamId] = {};
   if(val===null || val===undefined || isNaN(val)) delete state.scores[roundId][teamId][field];
   else state.scores[roundId][teamId][field] = val;
+}
+// Mutates local state and pushes only that one field to Firestore, so two people
+// entering different pairs' scores at the same moment never overwrite each other.
+function saveScoreField(roundId, teamId, field, val){
+  setScoreField(roundId, teamId, field, val);
+  const path = `scores.${roundId}.${teamId}.${field}`;
+  saveField({ [path]: (val===null||val===undefined||isNaN(val)) ? deleteField() : val });
 }
 function hasTotal(s){ return typeof s.f9==='number' && typeof s.b9==='number'; }
 function grossTotal(s){ return s.f9 + s.b9; }
@@ -538,7 +570,7 @@ function getMarket(marketId){
   return (state.betting.markets && state.betting.markets[marketId]) || { status:'open' };
 }
 function marketBets(marketId){
-  return (state.betting.bets||[]).filter(b=>b.marketId===marketId);
+  return Object.values(state.betting.bets||{}).filter(b=>b.marketId===marketId);
 }
 function marketPool(marketId){
   const bets = marketBets(marketId);
@@ -1230,13 +1262,15 @@ function attachHandlers(){
     if(isNaN(amt) || amt===0){ toast('Enter a shots amount'); return; }
     if(!state.manualPenalties[state.activeRound]) state.manualPenalties[state.activeRound] = {};
     state.manualPenalties[state.activeRound][teamId] = amt;
-    save(); toast('Manual adjustment added'); render();
+    saveField({ [`manualPenalties.${state.activeRound}.${teamId}`]: amt });
+    toast('Manual adjustment added'); render();
   };
   document.querySelectorAll('[data-del-manual]').forEach(b=>{
     b.onclick = ()=>{
       const teamId = b.dataset.delManual;
       if(state.manualPenalties[state.activeRound]) delete state.manualPenalties[state.activeRound][teamId];
-      save(); toast('Removed'); render();
+      saveField({ [`manualPenalties.${state.activeRound}.${teamId}`]: deleteField() });
+      toast('Removed'); render();
     };
   });
 
@@ -1255,34 +1289,43 @@ function attachHandlers(){
     if(!name){ toast('Enter a name'); return; }
     if(!teamId){ toast('Pick a pair'); return; }
     if(isNaN(stake) || stake<=0){ toast('Enter a stake'); return; }
-    state.betting.bets.push({ id: uid('bet'), marketId: bettingMarket, name, teamId, stake, placedAt: Date.now() });
-    save(); toast('Bet placed'); render();
+    const betId = uid('bet');
+    const bet = { id: betId, marketId: bettingMarket, name, teamId, stake, placedAt: Date.now() };
+    state.betting.bets[betId] = bet;
+    saveField({ [`betting.bets.${betId}`]: bet });
+    toast('Bet placed'); render();
   };
   document.querySelectorAll('[data-del-bet]').forEach(b=>{
     b.onclick = ()=>{
-      state.betting.bets = state.betting.bets.filter(x=>x.id!==b.dataset.delBet);
-      save(); toast('Bet removed'); render();
+      const betId = b.dataset.delBet;
+      delete state.betting.bets[betId];
+      saveField({ [`betting.bets.${betId}`]: deleteField() });
+      toast('Bet removed'); render();
     };
   });
   const closeMarketBtn = document.getElementById('close-market');
   if(closeMarketBtn) closeMarketBtn.onclick = ()=>{
     if(!state.betting.markets[bettingMarket]) state.betting.markets[bettingMarket] = {};
     state.betting.markets[bettingMarket].status = 'closed';
-    save(); toast('Betting closed'); render();
+    saveField({ [`betting.markets.${bettingMarket}`]: { status:'closed' } });
+    toast('Betting closed'); render();
   };
   const openMarketBtn = document.getElementById('open-market');
   if(openMarketBtn) openMarketBtn.onclick = ()=>{
     if(!state.betting.markets[bettingMarket]) state.betting.markets[bettingMarket] = {};
     state.betting.markets[bettingMarket].status = 'open';
-    save(); toast('Betting reopened'); render();
+    saveField({ [`betting.markets.${bettingMarket}`]: { status:'open' } });
+    toast('Betting reopened'); render();
   };
   const settleMarketBtn = document.getElementById('settle-market');
   if(settleMarketBtn) settleMarketBtn.onclick = ()=>{
     const winners = marketWinners(bettingMarket);
     if(!winners){ toast('Result not known yet'); return; }
     if(!confirm('Settle this market and pay out now? This can\'t be undone.')) return;
-    state.betting.markets[bettingMarket] = { status:'settled', winnerTeamIds: winners };
-    save(); toast('Market settled'); render();
+    const marketData = { status:'settled', winnerTeamIds: winners };
+    state.betting.markets[bettingMarket] = marketData;
+    saveField({ [`betting.markets.${bettingMarket}`]: marketData });
+    toast('Market settled'); render();
   };
 
   document.querySelectorAll('[data-score-team]').forEach(inp=>{
@@ -1291,8 +1334,8 @@ function attachHandlers(){
       const field = inp.dataset.scoreField;
       const roundId = inp.dataset.scoreRound || state.activeRound;
       const v = inp.value==='' ? null : parseInt(inp.value,10);
-      setScoreField(roundId, teamId, field, v);
-      save(); render();
+      saveScoreField(roundId, teamId, field, v);
+      render();
     };
   });
   document.querySelectorAll('[data-tb-team]').forEach(inp=>{
@@ -1300,8 +1343,8 @@ function attachHandlers(){
       const teamId = inp.dataset.tbTeam;
       const field = inp.dataset.tbField;
       const v = inp.value==='' ? null : parseInt(inp.value,10);
-      setScoreField(state.activeRound, teamId, field, v);
-      save(); render();
+      saveScoreField(state.activeRound, teamId, field, v);
+      render();
     };
   });
 
