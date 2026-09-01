@@ -625,6 +625,7 @@ let lbMode = 'net'; // net | points
 let scoresDropdownTeam = null;
 let overallEditTeam = null;
 let bettingMarket = 'overall';
+let manualMode = 'penalty'; // 'penalty' (+) or 'help' (-)
 
 function render(){
   document.querySelectorAll('.tabbar button').forEach(b=>{
@@ -941,8 +942,12 @@ function renderScores(){
         <option value="">Select a pair…</option>
         ${penaltyOptions}
       </select>
-      <label>Shots (positive to penalize, negative to help)</label>
-      <input type="number" inputmode="numeric" id="manual-amount" placeholder="e.g. 3 or -3">
+      <div class="toggle2" style="margin-top:10px;">
+        <button type="button" id="manual-mode-penalty" class="manual-mode-btn ${manualMode==='penalty'?'active':''}" data-mode="penalty">Penalize (+)</button>
+        <button type="button" id="manual-mode-help" class="manual-mode-btn ${manualMode==='help'?'active':''}" data-mode="help">Help (−)</button>
+      </div>
+      <label>Shots</label>
+      <input type="number" inputmode="numeric" id="manual-amount" placeholder="e.g. 3">
       <button class="btn btn-ghost" id="add-manual">Add adjustment</button>
     </div>`;
   }
@@ -1257,14 +1262,18 @@ function attachHandlers(){
     const teamSel = document.getElementById('manual-team-picker');
     const amtInp = document.getElementById('manual-amount');
     const teamId = teamSel.value;
-    const amt = parseInt(amtInp.value,10);
+    const rawAmt = parseInt(amtInp.value,10);
     if(!teamId){ toast('Pick a pair first'); return; }
-    if(isNaN(amt) || amt===0){ toast('Enter a shots amount'); return; }
+    if(isNaN(rawAmt) || rawAmt===0){ toast('Enter a shots amount'); return; }
+    const amt = manualMode==='help' ? -Math.abs(rawAmt) : Math.abs(rawAmt);
     if(!state.manualPenalties[state.activeRound]) state.manualPenalties[state.activeRound] = {};
     state.manualPenalties[state.activeRound][teamId] = amt;
     saveField({ [`manualPenalties.${state.activeRound}.${teamId}`]: amt });
     toast('Manual adjustment added'); render();
   };
+  document.querySelectorAll('.manual-mode-btn').forEach(b=>{
+    b.onclick = ()=>{ manualMode = b.dataset.mode; render(); };
+  });
   document.querySelectorAll('[data-del-manual]').forEach(b=>{
     b.onclick = ()=>{
       const teamId = b.dataset.delManual;
