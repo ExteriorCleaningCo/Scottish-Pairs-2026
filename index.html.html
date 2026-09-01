@@ -72,7 +72,7 @@ main{padding:0 16px 20px;}
   display:flex; align-items:center; justify-content:space-between;
 }
 .panel-dark{background:var(--bg-raised); border-radius:var(--radius); padding:16px; margin-bottom:14px; border:1px solid var(--line);}
-.panel-dark h2{font-family:'Big Shoulders',sans-serif; font-size:19px; text-transform:uppercase; margin:0 0 10px; color:var(--paper); font-weight:700;}
+.panel-dark h2{font-family:'Big Shoulders',sans-serif; font-size:19px; text-transform:uppercase; margin:0 0 10px; color:var(--paper); font-weight:700; display:flex; align-items:center; justify-content:space-between;}
 .muted{color:var(--ink-soft); font-size:13px;}
 .muted-dark{color:var(--cream-ink-dim); font-size:13px;}
 
@@ -204,6 +204,7 @@ input:focus{outline:2px solid var(--gold); outline-offset:1px;}
 <nav class="tabbar"><div class="wrap">
   <button data-tab="leaderboard"><span class="ic">🏆</span>Overall</button>
   <button data-tab="scores"><span class="ic">⛳</span>Daily</button>
+  <button data-tab="betting"><span class="ic">💰</span>Bets</button>
   <button data-tab="courses"><span class="ic">📍</span>Courses</button>
   <button data-tab="setup"><span class="ic">⚙️</span>Setup</button>
 </div></nav>
@@ -229,6 +230,12 @@ const fbApp = initializeApp(firebaseConfig);
 const db = initializeFirestore(fbApp, { localCache: persistentLocalCache() });
 const stateRef = doc(db, "competition", "scottishPairs2026");
 
+// Anyone with the link can view everything live. Editing (scores, pairings,
+// courses, prizes, resets) is locked behind this PIN — change it to whatever
+// you like, it only lives in this file, not in Firestore.
+const ADMIN_PIN = "4321";
+let isAdmin = localStorage.getItem('sp2026_admin') === 'yes';
+
 const SCORE_MODEL = 'net-v1';
 const DEFAULT_TEAMS = 12;
 const DEFAULT_ROUNDS = 5;
@@ -240,7 +247,7 @@ function defaultState(){
   const courseNames = ['Kirriemuir','Alyth','Strathmore','Forfar','Blairgowrie'];
   const rounds = Array.from({length:DEFAULT_ROUNDS}, (_,i)=>({id:uid('r'), course:courseNames[i]||'', date:''}));
   const prizes = { daily:[60,40,30,20], overall:[200,150,100] };
-  return { teams, rounds, scores:{}, prizes, manualPenalties:{}, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
+  return { teams, rounds, scores:{}, prizes, manualPenalties:{}, betting:{markets:{}, bets:[]}, scoreModel:SCORE_MODEL, activeRound: rounds[0] ? rounds[0].id : null };
 }
 function defaultPairNames(){
   return [
@@ -258,6 +265,7 @@ function runMigrations(){
   let changed = false;
   if(!state.prizes){ state.prizes = { daily:[60,40,30,20], overall:[200,150,100] }; changed = true; }
   if(!state.manualPenalties){ state.manualPenalties = {}; changed = true; }
+  if(!state.betting){ state.betting = {markets:{}, bets:[]}; changed = true; }
 
   // Patch any still-default "Pair N" slots (untouched, no players) with the real pairings.
   const pairNames = defaultPairNames();
@@ -355,6 +363,7 @@ onSnapshot(stateRef, { includeMetadataChanges: true }, (snap)=>{
 setConnStatus('connecting');
 
 function money(n){ return '£'+Number(n||0).toLocaleString('en-GB'); }
+function signedNum(n){ return (n>0?'+':'') + n; }
 function dailyPrize(rank){ const p = state.prizes.daily; return (rank>=1 && rank<=p.length) ? p[rank-1] : null; }
 function overallPrize(pos){ const p = state.prizes.overall; return (pos>=1 && pos<=p.length) ? p[pos-1] : null; }
 
@@ -496,10 +505,94 @@ function standings(){
   return { table, res };
 }
 
+// Sorts standings for a given mode with a sensible tiebreak instead of
+// falling back to arbitrary array order when two pairs are level.
+function sortStandings(table, mode){
+  return [...table].sort((a,b)=>{
+    if(mode==='net'){
+      if(a.net!==b.net) return a.net-b.net;
+      return b.points-a.points; // tie on net: more GP points ranks higher
+    } else {
+      if(b.points!==a.points) return b.points-a.points;
+      return a.net-b.net; // tie on points: lower net ranks higher
+    }
+  });
+}
+
+/* ---------- betting engine ---------- */
+// Markets: 'overall' (the whole week) and one per round id (that day's winner).
+// A market's state is derived on the fly from state.betting.bets except for
+// status ('open'/'closed'/'settled') and the frozen winner list once settled,
+// which are the only things actually stored per market.
+
+function marketIds(){
+  return ['overall', ...state.rounds.map(r=>r.id)];
+}
+function marketLabel(marketId){
+  if(marketId==='overall') return 'Overall winner';
+  const idx = state.rounds.findIndex(r=>r.id===marketId);
+  const r = state.rounds[idx];
+  return idx>=0 ? `Day ${idx+1} — ${r.course||'Course TBC'}` : marketId;
+}
+function getMarket(marketId){
+  return (state.betting.markets && state.betting.markets[marketId]) || { status:'open' };
+}
+function marketBets(marketId){
+  return (state.betting.bets||[]).filter(b=>b.marketId===marketId);
+}
+function marketPool(marketId){
+  const bets = marketBets(marketId);
+  const byTeam = {};
+  let total = 0;
+  bets.forEach(b=>{
+    byTeam[b.teamId] = (byTeam[b.teamId]||0) + b.stake;
+    total += b.stake;
+  });
+  return { total, byTeam, betCount: bets.length };
+}
+// Who actually won, for settling — independent of what's been bet on.
+function marketWinners(marketId){
+  if(marketId==='overall'){
+    const { table, res } = standings();
+    const allResolved = state.rounds.length>0 && state.rounds.every(r=>res[r.id] && res[r.id].resolved);
+    if(!allResolved) return null;
+    const played = table.filter(row=>row.roundsPlayed===state.rounds.length);
+    if(played.length===0) return null;
+    const lowest = Math.min(...played.map(row=>row.net));
+    return played.filter(row=>row.net===lowest).map(row=>row.team.id);
+  } else {
+    const res = computeAllRounds();
+    const rr = res[marketId];
+    if(!rr || !rr.resolved) return null;
+    return Object.keys(rr.results).filter(teamId=>rr.results[teamId].rank===1);
+  }
+}
+function isMarketSettled(marketId){ return getMarket(marketId).status==='settled'; }
+function settledWinners(marketId){
+  const m = getMarket(marketId);
+  return m.status==='settled' ? (m.winnerTeamIds||[]) : null;
+}
+// Payout per £1 staked on the winning side, and each bet's actual payout.
+function marketPayouts(marketId){
+  const winners = settledWinners(marketId);
+  if(!winners) return null;
+  const { total, byTeam } = marketPool(marketId);
+  const onWinners = winners.reduce((sum,tid)=>sum+(byTeam[tid]||0), 0);
+  const perPound = onWinners>0 ? total/onWinners : 0;
+  const bets = marketBets(marketId).map(b=>({
+    ...b,
+    won: winners.includes(b.teamId),
+    payout: winners.includes(b.teamId) ? Math.round(b.stake*perPound*100)/100 : 0
+  }));
+  return { total, onWinners, perPound, bets };
+}
+
 /* ---------- rendering ---------- */
 let activeTab = 'leaderboard';
 let lbMode = 'net'; // net | points
 let scoresDropdownTeam = null;
+let overallEditTeam = null;
+let bettingMarket = 'overall';
 
 function render(){
   document.querySelectorAll('.tabbar button').forEach(b=>{
@@ -508,6 +601,7 @@ function render(){
   const view = document.getElementById('view');
   if(activeTab==='leaderboard') view.innerHTML = renderLeaderboard();
   else if(activeTab==='scores') view.innerHTML = renderScores();
+  else if(activeTab==='betting') view.innerHTML = renderBetting();
   else if(activeTab==='courses') view.innerHTML = renderCourses();
   else view.innerHTML = renderSetup();
   attachHandlers();
@@ -524,7 +618,7 @@ function renderLeaderboard(){
   if(!anyPlayed){
     return `<div class="card"><div class="empty">No rounds completed yet.<br>Enter scores for a round on the Daily tab and the leaderboards will build themselves.</div></div>`;
   }
-  const sorted = [...table].sort((a,b)=> lbMode==='net' ? (a.net-b.net) : (b.points-a.points));
+  const sorted = sortStandings(table, lbMode);
 
   let podiumHtml = '';
   if(sorted.length>=3){
@@ -544,7 +638,7 @@ function renderLeaderboard(){
     const playersStr = [r.team.p1,r.team.p2].filter(Boolean).join(' & ');
     const mainVal = lbMode==='net' ? r.net : r.points;
     const subVal = lbMode==='net' ? (r.points+' pts') : (r.net+' net');
-    return `<div class="lb-row">
+    return `<div class="lb-row" style="cursor:pointer;" data-team-detail="${r.team.id}">
       <div class="lb-pos ${posClass}">${pos}</div>
       <div class="lb-info">
         <div class="lb-team">${esc(r.team.name)}</div>
@@ -557,7 +651,10 @@ function renderLeaderboard(){
     </div>`;
   }).join('');
 
+  const detailCard = overallEditTeam ? renderTeamDetail(overallEditTeam) : '';
+
   return `
+    ${detailCard}
     <div class="panel-dark">
       <h2>Podium</h2>
       ${podiumHtml || '<div class="muted-dark">Need at least 3 pairs with results.</div>'}
@@ -570,15 +667,55 @@ function renderLeaderboard(){
       <h2>${lbMode==='net' ? 'Overall — net score' : 'Grand Prix — points'}</h2>
       ${rows}
       <div class="muted" style="margin-top:8px;">${lbMode==='net' ? 'Lowest cumulative net score leads. Net score already includes each pair\u2019s running adjustment.' : 'Points run 24 down to 2 each day (12 pairs), based on that day\u2019s net-score ranking, added up across the week.'}</div>
+      <div class="muted" style="margin-top:4px;">Tap a pair to view or edit their scores for every day.</div>
     </div>
     ${renderMatrix()}
   `;
 }
 
+function renderTeamDetail(teamId){
+  const t = state.teams.find(x=>x.id===teamId);
+  if(!t) return '';
+  const res = computeAllRounds();
+  const playersStr = [t.p1,t.p2].filter(Boolean).join(' & ');
+  const dayRows = state.rounds.map((r,i)=>{
+    const rr = res[r.id];
+    const s = getScore(r.id, t.id);
+    const gross = hasTotal(s) ? grossTotal(s) : null;
+    const carry = (rr && rr.adjBefore && rr.adjBefore[t.id]) || 0;
+    const manual = manualPenalty(r.id, t.id);
+    const net = gross!==null ? gross + carry + manual : null;
+    let badge = '';
+    if(rr && rr.resolved && rr.results[t.id]){
+      const d = rr.results[t.id];
+      const dp = dailyPrize(d.rank);
+      badge = `<span class="chip ${d.delta<0?'minus':d.delta>0?'plus':'flat'}">${ordinal(d.rank)} · ${d.points}pts${dp?' · '+money(dp):''}</span>`;
+    } else if(rr && rr.blocking && rr.blocking.teamIds.includes(t.id)){
+      badge = `<span class="chip tie">Tied — resolve on Daily</span>`;
+    }
+    if(manual!==0) badge += ` <span class="chip ${manual>0?'plus':'minus'}">${signedNum(manual)} manual</span>`;
+    return `<div class="score-block">
+      <div class="sname">Day ${i+1} — ${esc(r.course)||'Course TBC'} ${badge}</div>
+      <div class="score-inputs">
+        <div class="fld"><span>Front 9</span><input type="number" inputmode="numeric" placeholder="—" ${isAdmin?'':'disabled'} data-score-round="${r.id}" data-score-team="${t.id}" data-score-field="f9" value="${s.f9!==undefined?s.f9:''}"></div>
+        <div class="fld"><span>Back 9</span><input type="number" inputmode="numeric" placeholder="—" ${isAdmin?'':'disabled'} data-score-round="${r.id}" data-score-team="${t.id}" data-score-field="b9" value="${s.b9!==undefined?s.b9:''}"></div>
+        <div class="net-box"><span>Net</span><div class="netval">${net!==null?net:'–'}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel-dark">
+    <h2>${esc(t.name)}<button class="icon-btn" data-close-team-detail="1" style="font-size:20px;">✕</button></h2>
+    ${playersStr ? `<div class="muted-dark" style="margin-top:-6px;">${esc(playersStr)}</div>` : ''}
+    <div style="margin-top:10px;">${dayRows}</div>
+    <div class="muted-dark" style="margin-top:6px;">${isAdmin ? 'Editing here updates the same scores shown on the Daily tab. Ties still need their countback entered there.' : 'View only — ask the admin to make changes.'}</div>
+  </div>`;
+}
+
 function renderMatrix(){
   const { res } = standings();
   const { table } = standings();
-  const sorted = [...table].sort((a,b)=> lbMode==='net' ? (a.net-b.net) : (b.points-a.points));
+  const sorted = sortStandings(table, lbMode);
   const head = state.rounds.map((r,i)=>`<th>D${i+1}</th>`).join('');
   const rows = sorted.map(row=>{
     const cells = state.rounds.map(r=>{
@@ -652,16 +789,16 @@ function renderScores(){
     } else if(blockingIds.includes(t.id)){
       badge = `<span class="chip tie">Tied — see countback above</span>`;
     }
-    if(manual!==0) badge += ` <span class="chip plus">+${manual} manual penalty</span>`;
+    if(manual!==0) badge += ` <span class="chip ${manual>0?'plus':'minus'}">${signedNum(manual)} manual adj</span>`;
 
     return `<div class="score-block">
       <div class="sname">${esc(t.name)} ${badge}${playersStr?`<span class="splayers">${esc(playersStr)}</span>`:''}</div>
       <div class="score-inputs">
-        <div class="fld"><span>Front 9</span><input type="number" inputmode="numeric" placeholder="—" data-score-team="${t.id}" data-score-field="f9" value="${s.f9!==undefined?s.f9:''}"></div>
-        <div class="fld"><span>Back 9</span><input type="number" inputmode="numeric" placeholder="—" data-score-team="${t.id}" data-score-field="b9" value="${s.b9!==undefined?s.b9:''}"></div>
+        <div class="fld"><span>Front 9</span><input type="number" inputmode="numeric" placeholder="—" ${isAdmin?'':'disabled'} data-score-team="${t.id}" data-score-field="f9" value="${s.f9!==undefined?s.f9:''}"></div>
+        <div class="fld"><span>Back 9</span><input type="number" inputmode="numeric" placeholder="—" ${isAdmin?'':'disabled'} data-score-team="${t.id}" data-score-field="b9" value="${s.b9!==undefined?s.b9:''}"></div>
         <div class="net-box"><span>Net</span><div class="netval">${net!==null?net:'–'}</div></div>
       </div>
-      ${(carry!==0||manual!==0) ? `<div class="carry-note">${carry!==0?`Carrying ${carry>0?'+'+carry:carry}`:''}${carry!==0&&manual!==0?' + ':''}${manual!==0?`${manual>0?'+'+manual:manual} manual penalty`:''} into today's net (gross ${gross!==null?gross:'–'} ${carry>=0?'+':''}${carry}${manual!==0?(manual>=0?' +'+manual:' '+manual):''} = ${net!==null?net:'–'})</div>` : ''}
+      ${(carry!==0||manual!==0) ? `<div class="carry-note">${carry!==0?`Carrying ${carry>0?'+'+carry:carry}`:''}${carry!==0&&manual!==0?' + ':''}${manual!==0?`${signedNum(manual)} manual adj`:''} into today's net (gross ${gross!==null?gross:'–'} ${carry>=0?'+':''}${carry}${manual!==0?' '+signedNum(manual):''} = ${net!==null?net:'–'})</div>` : ''}
     </div>`;
   }
 
@@ -673,7 +810,7 @@ function renderScores(){
       <div style="font-family:'Big Shoulders',sans-serif; font-size:26px; font-weight:900; text-transform:uppercase; color:var(--paper); line-height:1;">${esc(round.course) || 'Course TBC'}</div>
       <div class="muted-dark" style="margin-top:4px;">${esc(dateStr2)}</div>
       <div class="round-tabs" style="margin-top:14px;">${pills}</div>
-      <button class="btn btn-ghost" data-goto-courses="1">Edit course details</button>
+      ${isAdmin ? `<button class="btn btn-ghost" data-goto-courses="1">Edit course details</button>` : ''}
     </div>`;
 
   // Winners box — always present. Fills in once the day resolves.
@@ -686,7 +823,7 @@ function renderScores(){
       const dp = dailyPrize(d.rank);
       return `<div class="lb-row">
         <div class="lb-pos ${posClass}">${d.rank}</div>
-        <div class="lb-info"><div class="lb-team">${esc(t.name)}${d.manual?` <span class="chip plus" style="margin-left:4px;">+${d.manual} manual</span>`:''}</div></div>
+        <div class="lb-info"><div class="lb-team">${esc(t.name)}${d.manual?` <span class="chip ${d.manual>0?'plus':'minus'}" style="margin-left:4px;">${signedNum(d.manual)} manual</span>`:''}</div></div>
         <div>
           <div class="lb-val">${d.net}</div>
           <div class="lb-strokes">${dp?money(dp):d.points+' pts'}</div>
@@ -715,12 +852,12 @@ function renderScores(){
       const val = nextLevel==='l6' ? s.l6 : s.l3;
       return `<div style="margin-top:10px;">
         <div class="tb-label" style="margin-bottom:4px;">${esc(t.name)}</div>
-        <input type="number" inputmode="numeric" placeholder="${levelLabel} score" data-tb-team="${t.id}" data-tb-field="${nextLevel}" value="${val!==undefined?val:''}">
+        <input type="number" inputmode="numeric" placeholder="${levelLabel} score" ${isAdmin?'':'disabled'} data-tb-team="${t.id}" data-tb-field="${nextLevel}" value="${val!==undefined?val:''}">
       </div>`;
     }).join('');
     tieBox = `<div class="card" style="border:2px solid #C9A83A;">
       <h2>⚑ Countback needed</h2>
-      <div class="muted">${tiedTeams.length} pairs are level on net score. Enter their ${levelLabel} gross score to split them.</div>
+      <div class="muted">${tiedTeams.length} pairs are level on net score.${isAdmin?` Enter their ${levelLabel} gross score to split them.`:' Waiting on the admin to enter the countback.'}</div>
       ${rows2}
     </div>`;
   }
@@ -747,37 +884,52 @@ function renderScores(){
     ${selectedTeam ? `<div style="margin-top:10px;">${teamBlock(selectedTeam)}</div>` : '<div class="muted" style="margin-top:8px;">Pick a pair to enter or check their front 9 / back 9.</div>'}
   </div>`;
 
-  // Manual penalty — a one-off extra applied to THIS day's net only, for an
-  // exceptional score. Doesn't feed into the running carry, so it's gone again
-  // from the day after.
-  const currentPenalties = state.manualPenalties[round.id] || {};
-  const penaltyRows = Object.keys(currentPenalties).map(teamId=>{
-    const t = state.teams.find(x=>x.id===teamId);
-    if(!t) return '';
-    return `<div class="team-item">
-      <div class="tinfo"><div class="tname" style="color:var(--paper);">${esc(t.name)}</div><div class="tplayers">+${currentPenalties[teamId]} shots, this day only</div></div>
-      <button class="icon-btn" data-del-manual="${teamId}">🗑️</button>
+  // Manual adjustment — a one-off extra applied to THIS day's net only, either to
+  // penalize an exceptional score or hand back some shots. Doesn't feed into the
+  // running carry, so it's gone again from the day after. Admin-only.
+  let manualBox = '';
+  if(isAdmin){
+    const currentPenalties = state.manualPenalties[round.id] || {};
+    const penaltyRows = Object.keys(currentPenalties).map(teamId=>{
+      const t = state.teams.find(x=>x.id===teamId);
+      if(!t) return '';
+      const amt = currentPenalties[teamId];
+      return `<div class="team-item">
+        <div class="tinfo"><div class="tname" style="color:var(--paper);">${esc(t.name)}</div><div class="tplayers">${signedNum(amt)} shots, this day only</div></div>
+        <button class="icon-btn" data-del-manual="${teamId}">🗑️</button>
+      </div>`;
+    }).join('');
+    const penaltyOptions = state.teams.filter(t=>currentPenalties[t.id]===undefined).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+    manualBox = `<div class="panel-dark">
+      <h2>Manual adjustment</h2>
+      <div class="muted-dark">For an exceptional score — adds or removes shots from a pair's net for this day only. Doesn't carry into the day after.</div>
+      ${penaltyRows}
+      <label>Pair</label>
+      <select id="manual-team-picker">
+        <option value="">Select a pair…</option>
+        ${penaltyOptions}
+      </select>
+      <label>Shots (positive to penalize, negative to help)</label>
+      <input type="number" inputmode="numeric" id="manual-amount" placeholder="e.g. 3 or -3">
+      <button class="btn btn-ghost" id="add-manual">Add adjustment</button>
     </div>`;
-  }).join('');
-  const penaltyOptions = state.teams.filter(t=>currentPenalties[t.id]===undefined).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const manualBox = `<div class="panel-dark">
-    <h2>Manual penalty</h2>
-    <div class="muted-dark">For an exceptional score — adds extra shots to a pair's net for this day only. Doesn't carry into the day after.</div>
-    ${penaltyRows}
-    <label>Pair</label>
-    <select id="manual-team-picker">
-      <option value="">Select a pair…</option>
-      ${penaltyOptions}
-    </select>
-    <label>Extra shots</label>
-    <input type="number" inputmode="numeric" id="manual-amount" placeholder="e.g. 3">
-    <button class="btn btn-ghost" id="add-manual">Add penalty</button>
-  </div>`;
+  }
 
   return `${courseHeader}${winnersBox}${tieBox}${scoreBox}${manualBox}`;
 }
 
 function renderCourses(){
+  if(!isAdmin){
+    const rowsRO = state.rounds.map((r,i)=>`
+      <div class="round-item">
+        <div>
+          <div class="rname">Day ${i+1} — ${esc(r.course)||'Course TBC'}</div>
+          <div class="rstatus">${r.date ? new Date(r.date+'T00:00:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'}) : 'Date TBC'}</div>
+        </div>
+      </div>`).join('');
+    return `<div class="panel-dark"><h2>Courses — Day 1–${state.rounds.length}</h2>${rowsRO || '<div class="muted-dark">No rounds yet.</div>'}</div>`;
+  }
+
   const rows = state.rounds.map((r,i)=>`
     <div class="round-item">
       <div style="flex:1;">
@@ -799,7 +951,160 @@ function renderCourses(){
   `;
 }
 
+function renderBetting(){
+  if(!marketIds().includes(bettingMarket)) bettingMarket = 'overall';
+  const marketPills = marketIds().map((mid,i)=>{
+    const label = mid==='overall' ? 'Overall' : `D${i}`;
+    const st = getMarket(mid).status;
+    return `<button class="round-pill ${mid===bettingMarket?'active':''} ${st==='settled'?'done':''} ${st==='closed'?'tied':''}" data-market="${mid}">${label}</button>`;
+  }).join('');
+
+  const mid = bettingMarket;
+  const market = getMarket(mid);
+  const { total, byTeam, betCount } = marketPool(mid);
+  const winners = marketWinners(mid);
+  const settled = market.status==='settled';
+  const payouts = settled ? marketPayouts(mid) : null;
+
+  // Odds board — sorted most-backed (favourite) first.
+  const board = state.teams.map(t=>{
+    const staked = byTeam[t.id]||0;
+    const perPound = staked>0 ? total/staked : null;
+    return { t, staked, perPound };
+  }).sort((a,b)=> b.staked-a.staked);
+
+  const boardRows = board.map((row,idx)=>{
+    const isFav = idx===0 && row.staked>0;
+    const isWinner = settled && winners && winners.includes(row.t.id);
+    return `<div class="lb-row">
+      <div class="lb-pos ${isFav?'gold':''}">${isFav?'★':''}</div>
+      <div class="lb-info">
+        <div class="lb-team">${esc(row.t.name)}${isWinner?' <span class="chip minus">Winner</span>':''}</div>
+        <div class="lb-players">${row.staked>0?money(row.staked)+' staked':'No bets yet'}</div>
+      </div>
+      <div>
+        <div class="lb-val">${row.perPound!==null?row.perPound.toFixed(2)+'x':'—'}</div>
+        <div class="lb-strokes">per £1</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const betRows = marketBets(mid).map(b=>{
+    const t = state.teams.find(x=>x.id===b.teamId);
+    const p = payouts ? payouts.bets.find(x=>x.id===b.id) : null;
+    return `<div class="team-item">
+      <div class="tinfo">
+        <div class="tname" style="color:var(--paper);">${esc(b.name)} — ${esc(t?t.name:'?')}</div>
+        <div class="tplayers">${money(b.stake)} staked${p ? (p.won ? ` · won ${money(p.payout)}` : ' · no return') : ''}</div>
+      </div>
+      ${isAdmin && !settled ? `<button class="icon-btn" data-del-bet="${b.id}">🗑️</button>` : ''}
+    </div>`;
+  }).join('');
+
+  const teamOptions = state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  const canBet = market.status==='open' && !settled;
+
+  let betForm = '';
+  if(canBet){
+    betForm = `<div class="card">
+      <h2>Place a bet</h2>
+      <label>Your name</label>
+      <input type="text" id="bet-name" placeholder="Who's betting?">
+      <label>Pair</label>
+      <select id="bet-team"><option value="">Select a pair…</option>${teamOptions}</select>
+      <label>Stake (£)</label>
+      <input type="number" inputmode="numeric" id="bet-stake" placeholder="e.g. 5">
+      <button class="btn btn-primary" id="place-bet">Place bet</button>
+    </div>`;
+  }
+
+  let adminControls = '';
+  if(isAdmin){
+    const canSettle = market.status==='closed' && winners;
+    adminControls = `<div class="panel-dark">
+      <h2>Market admin</h2>
+      <div class="muted-dark">Status: ${market.status}${winners && !settled ? ` — result known (${winners.map(id=>state.teams.find(t=>t.id===id)?.name).join(', ')})` : ''}</div>
+      <div class="row2" style="margin-top:10px;">
+        ${market.status==='open' ? `<button class="btn btn-ghost" id="close-market">Close betting</button>` : ''}
+        ${market.status==='closed' ? `<button class="btn btn-ghost" id="open-market">Reopen betting</button>` : ''}
+      </div>
+      ${!settled ? `<button class="btn btn-primary" id="settle-market" ${canSettle?'':'disabled'}>Settle & pay out</button>` : ''}
+      ${!settled && market.status==='open' ? `<div class="muted-dark" style="margin-top:6px;">Close betting before settling, and the result needs to be in first.</div>` : ''}
+    </div>`;
+  }
+
+  const payoutSummary = settled && payouts ? `<div class="card">
+    <h2>Payout</h2>
+    <div class="muted">Pool: ${money(payouts.total)} · Staked on the winner: ${money(payouts.onWinners)} · Return: ${payouts.perPound.toFixed(2)}x per £1</div>
+  </div>` : '';
+
+  return `
+    <div class="panel-dark">
+      <h2>Tote betting</h2>
+      <div class="muted-dark">Odds move with the money — the pair with the most staked is the favourite. Winners split the whole pool.</div>
+      <div class="round-tabs" style="margin-top:14px;">${marketPills}</div>
+    </div>
+    <div class="card">
+      <h2>${esc(marketLabel(mid))}</h2>
+      <div class="muted" style="margin-bottom:8px;">${betCount} bet${betCount===1?'':'s'} · ${money(total)} in the pool</div>
+      ${boardRows || '<div class="empty">No bets placed yet.</div>'}
+    </div>
+    ${payoutSummary}
+    ${betForm}
+    ${betCount>0 ? `<div class="card"><h2>All bets</h2>${betRows}</div>` : ''}
+    ${adminControls}
+  `;
+}
+
 function renderSetup(){
+  const adminPanel = `
+    <div class="panel-dark">
+      <h2>Admin access</h2>
+      ${isAdmin
+        ? `<div class="muted-dark">Admin mode is on — you can edit pairings, courses, prizes and scores.</div>
+           <button class="btn btn-ghost" id="lock-admin">Lock admin mode</button>`
+        : `<div class="muted-dark">Everyone can view live. Enter the PIN to make changes.</div>
+           <label>PIN</label>
+           <input type="text" inputmode="numeric" id="admin-pin-input" placeholder="Enter PIN">
+           <button class="btn btn-primary" id="unlock-admin">Unlock</button>`
+      }
+    </div>`;
+
+  if(!isAdmin){
+    const teamRowsRO = state.teams.map(t=>`
+      <div class="team-item">
+        <div class="tinfo">
+          <div class="tname">${esc(t.name)}</div>
+          <div class="tplayers">${[t.p1,t.p2].filter(Boolean).join(' & ') || 'Players not set'}</div>
+        </div>
+      </div>`).join('');
+    return `
+      ${adminPanel}
+      <div class="panel-dark">
+        <h2>Pairings (${state.teams.length})</h2>
+        ${teamRowsRO || '<div class="muted-dark">No pairs yet.</div>'}
+      </div>
+      <div class="panel-dark">
+        <h2>Prizes</h2>
+        <div class="muted-dark">Daily: ${state.prizes.daily.map(money).join(' · ')}</div>
+        <div class="muted-dark" style="margin-top:4px;">Overall: ${state.prizes.overall.map(money).join(' · ')}</div>
+      </div>
+      <div class="panel-dark">
+        <h2>How scoring works</h2>
+        <div class="muted-dark" style="line-height:1.5;">
+          Pairs better-ball, stroke play: lowest of the two players' scores counts on each hole.<br><br>
+          Each day's <b>net score</b> is the gross total plus whatever adjustment the pair is currently carrying. 1st adds a +2 onto their carry for the next day, 2nd a +1; 11th adds a −1, 12th a −2 — stacking on top of whatever they already had. A mid-table finish (3rd–10th) leaves the running carry untouched.<br><br>
+          Each day also awards <b>Grand Prix points</b> off that same net-score ranking — 24 down to 2 in steps of 2 — which add up across the week.<br><br>
+          <b>Countback</b> (on net score ties): best back 9, then last 6 holes, then last 3.
+        </div>
+      </div>
+      <div class="panel-dark">
+        <h2>Backup</h2>
+        <button class="btn btn-ghost" id="export-data">Export data</button>
+      </div>
+    `;
+  }
+
   const teamRows = state.teams.map(t=>`
     <div class="team-item">
       <div class="tinfo">
@@ -810,6 +1115,7 @@ function renderSetup(){
     </div>`).join('');
 
   return `
+    ${adminPanel}
     <div class="panel-dark">
       <h2>Pairings (${state.teams.length})</h2>
       ${teamRows || '<div class="muted-dark">No pairs yet.</div>'}
@@ -901,6 +1207,12 @@ function attachHandlers(){
     b.onclick = ()=>{ lbMode = b.dataset.lb; render(); };
   });
 
+  document.querySelectorAll('[data-team-detail]').forEach(b=>{
+    b.onclick = ()=>{ overallEditTeam = b.dataset.teamDetail; render(); window.scrollTo(0,0); };
+  });
+  const closeDetail = document.querySelector('[data-close-team-detail]');
+  if(closeDetail) closeDetail.onclick = (e)=>{ e.stopPropagation(); overallEditTeam = null; render(); };
+
   document.querySelectorAll('[data-round]').forEach(b=>{
     b.onclick = ()=>{ state.activeRound = b.dataset.round; scoresDropdownTeam = null; save(); render(); };
   });
@@ -918,7 +1230,7 @@ function attachHandlers(){
     if(isNaN(amt) || amt===0){ toast('Enter a shots amount'); return; }
     if(!state.manualPenalties[state.activeRound]) state.manualPenalties[state.activeRound] = {};
     state.manualPenalties[state.activeRound][teamId] = amt;
-    save(); toast('Manual penalty added'); render();
+    save(); toast('Manual adjustment added'); render();
   };
   document.querySelectorAll('[data-del-manual]').forEach(b=>{
     b.onclick = ()=>{
@@ -927,12 +1239,59 @@ function attachHandlers(){
       save(); toast('Removed'); render();
     };
   });
+
+  // Betting
+  document.querySelectorAll('[data-market]').forEach(b=>{
+    b.onclick = ()=>{ bettingMarket = b.dataset.market; render(); };
+  });
+  const placeBetBtn = document.getElementById('place-bet');
+  if(placeBetBtn) placeBetBtn.onclick = ()=>{
+    const nameInp = document.getElementById('bet-name');
+    const teamSel = document.getElementById('bet-team');
+    const stakeInp = document.getElementById('bet-stake');
+    const name = nameInp.value.trim();
+    const teamId = teamSel.value;
+    const stake = parseFloat(stakeInp.value);
+    if(!name){ toast('Enter a name'); return; }
+    if(!teamId){ toast('Pick a pair'); return; }
+    if(isNaN(stake) || stake<=0){ toast('Enter a stake'); return; }
+    state.betting.bets.push({ id: uid('bet'), marketId: bettingMarket, name, teamId, stake, placedAt: Date.now() });
+    save(); toast('Bet placed'); render();
+  };
+  document.querySelectorAll('[data-del-bet]').forEach(b=>{
+    b.onclick = ()=>{
+      state.betting.bets = state.betting.bets.filter(x=>x.id!==b.dataset.delBet);
+      save(); toast('Bet removed'); render();
+    };
+  });
+  const closeMarketBtn = document.getElementById('close-market');
+  if(closeMarketBtn) closeMarketBtn.onclick = ()=>{
+    if(!state.betting.markets[bettingMarket]) state.betting.markets[bettingMarket] = {};
+    state.betting.markets[bettingMarket].status = 'closed';
+    save(); toast('Betting closed'); render();
+  };
+  const openMarketBtn = document.getElementById('open-market');
+  if(openMarketBtn) openMarketBtn.onclick = ()=>{
+    if(!state.betting.markets[bettingMarket]) state.betting.markets[bettingMarket] = {};
+    state.betting.markets[bettingMarket].status = 'open';
+    save(); toast('Betting reopened'); render();
+  };
+  const settleMarketBtn = document.getElementById('settle-market');
+  if(settleMarketBtn) settleMarketBtn.onclick = ()=>{
+    const winners = marketWinners(bettingMarket);
+    if(!winners){ toast('Result not known yet'); return; }
+    if(!confirm('Settle this market and pay out now? This can\'t be undone.')) return;
+    state.betting.markets[bettingMarket] = { status:'settled', winnerTeamIds: winners };
+    save(); toast('Market settled'); render();
+  };
+
   document.querySelectorAll('[data-score-team]').forEach(inp=>{
     inp.onchange = ()=>{
       const teamId = inp.dataset.scoreTeam;
       const field = inp.dataset.scoreField;
+      const roundId = inp.dataset.scoreRound || state.activeRound;
       const v = inp.value==='' ? null : parseInt(inp.value,10);
-      setScoreField(state.activeRound, teamId, field, v);
+      setScoreField(roundId, teamId, field, v);
       save(); render();
     };
   });
@@ -980,6 +1339,23 @@ function attachHandlers(){
     };
   });
 
+  const unlockBtn = document.getElementById('unlock-admin');
+  if(unlockBtn) unlockBtn.onclick = ()=>{
+    const pinInp = document.getElementById('admin-pin-input');
+    if(pinInp.value === ADMIN_PIN){
+      isAdmin = true;
+      localStorage.setItem('sp2026_admin','yes');
+      toast('Admin unlocked'); render();
+    } else {
+      toast('Wrong PIN');
+    }
+  };
+  const lockBtn = document.getElementById('lock-admin');
+  if(lockBtn) lockBtn.onclick = ()=>{
+    isAdmin = false;
+    localStorage.removeItem('sp2026_admin');
+    toast('Admin locked'); render();
+  };
   const addTeam = document.getElementById('add-team');
   if(addTeam) addTeam.onclick = ()=>{
     state.teams.push({id:uid('t'), name:'Pair '+(state.teams.length+1), p1:'', p2:''});
