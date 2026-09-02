@@ -212,7 +212,7 @@ input:focus{outline:2px solid var(--gold); outline-offset:1px;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, doc, setDoc, updateDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, doc, setDoc, updateDoc, deleteField, onSnapshot, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // ---- Firebase project config ----
 // Create a project at https://console.firebase.google.com, add a Web App,
@@ -229,6 +229,7 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = initializeFirestore(fbApp, { localCache: persistentLocalCache() });
 const stateRef = doc(db, "competition", "scottishPairs2026");
+const backupsCol = collection(db, "competition_backups");
 
 // Anyone with the link can view everything live. Editing (scores, pairings,
 // courses, prizes, resets) is locked behind this PIN — change it to whatever
@@ -312,6 +313,7 @@ function runMigrations(){
 function save(){
   setDoc(stateRef, state).then(()=>{
     setConnStatus('live');
+    maybeBackup();
   }).catch(err=>{
     console.error(err);
     setConnStatus('error');
@@ -327,11 +329,25 @@ function save(){
 function saveField(updates){
   updateDoc(stateRef, updates).then(()=>{
     setConnStatus('live');
+    maybeBackup();
   }).catch(err=>{
     console.error(err);
     setConnStatus('error');
     toast('Could not sync — check connection');
   });
+}
+
+// A point-in-time safety net: every so often (at most once every 5 minutes,
+// and only ever from the admin device), snapshot the whole competition into
+// its own dated document. If anything ever goes wrong with the live copy,
+// there's always a recent copy sitting behind it to restore from.
+let lastBackupAt = 0;
+function maybeBackup(){
+  if(!isAdmin) return;
+  const now = Date.now();
+  if(now - lastBackupAt < 5*60*1000) return;
+  lastBackupAt = now;
+  setDoc(doc(backupsCol, String(now)), { ...state, _backedUpAt: now }).catch(err=>console.error('backup failed', err));
 }
 
 function setConnStatus(mode){
@@ -370,6 +386,17 @@ onSnapshot(stateRef, { includeMetadataChanges: true }, (snap)=>{
     if(snap.exists()) state = snap.data();
     return;
   }
+  // A snapshot served from the local on-device cache can be stale — from a
+  // previous visit, hours or days old. Show it straight away so the app feels
+  // instant, but never run migrations or auto-save against it: doing so on
+  // stale data is what could silently push an old cached copy back over the
+  // live competition. Only act on a confirmed, server-sourced snapshot.
+  if(snap.metadata.fromCache){
+    if(snap.exists()) state = snap.data();
+    ready = true;
+    safeRender();
+    return;
+  }
   if(snap.exists()){
     state = snap.data();
   } else {
@@ -379,7 +406,10 @@ onSnapshot(stateRef, { includeMetadataChanges: true }, (snap)=>{
   const changed = runMigrations();
   ready = true;
   setConnStatus('live');
-  if(changed) save(); else safeRender();
+  // Only the admin device is ever allowed to write a migration fix-up back —
+  // a viewer's browser should never be able to save anything, under any
+  // circumstance, no matter what it locally computes as "changed".
+  if(changed && isAdmin) save(); else safeRender();
 }, (err)=>{
   console.error(err);
   setConnStatus('error');
@@ -626,6 +656,19 @@ let scoresDropdownTeam = null;
 let overallEditTeam = null;
 let bettingMarket = 'overall';
 let manualMode = 'penalty'; // 'penalty' (+) or 'help' (-)
+let recentBackups = [];
+
+async function loadBackups(){
+  try{
+    const q = query(backupsCol, orderBy('_backedUpAt','desc'), limit(8));
+    const snap = await getDocs(q);
+    recentBackups = snap.docs.map(d=>({ id:d.id, data:d.data() }));
+  }catch(err){
+    console.error(err);
+    toast('Could not load backups');
+  }
+  render();
+}
 
 function render(){
   document.querySelectorAll('.tabbar button').forEach(b=>{
@@ -1189,6 +1232,18 @@ function renderSetup(){
       <button class="btn btn-ghost" id="reset-scores">Reset all scores</button>
     </div>
     <div class="panel-dark">
+      <h2>Point-in-time backups</h2>
+      <div class="muted-dark">Saved automatically as you go (at most every 5 minutes). If anything ever looks wrong, restore the most recent one from before it happened.</div>
+      <button class="btn btn-ghost" id="load-backups">Refresh backup list</button>
+      ${recentBackups.length>0 ? recentBackups.map(b=>{
+        const dt = new Date(b.data._backedUpAt || Number(b.id));
+        return `<div class="team-item">
+          <div class="tinfo"><div class="tname" style="color:var(--paper);">${dt.toLocaleString('en-GB')}</div></div>
+          <button class="btn btn-ghost" style="width:auto; margin:0;" data-restore-backup="${b.id}">Restore</button>
+        </div>`;
+      }).join('') : '<div class="muted-dark" style="margin-top:8px;">No backups loaded yet — tap Refresh.</div>'}
+    </div>
+    <div class="panel-dark">
       <h2>Backup</h2>
       <button class="btn btn-ghost" id="export-data">Export data</button>
       <button class="btn btn-ghost" id="import-data">Import data</button>
@@ -1468,6 +1523,17 @@ function attachHandlers(){
       state = defaultState(); save(); toast('Reset'); render();
     }
   };
+  const loadBackupsBtn = document.getElementById('load-backups');
+  if(loadBackupsBtn) loadBackupsBtn.onclick = ()=>{ toast('Loading backups…'); loadBackups(); };
+  document.querySelectorAll('[data-restore-backup]').forEach(b=>{
+    b.onclick = ()=>{
+      const backup = recentBackups.find(x=>x.id===b.dataset.restoreBackup);
+      if(!backup) return;
+      if(!confirm('Restore this backup? It will replace everything currently live for the whole competition. This cannot be undone.')) return;
+      const { _backedUpAt, ...data } = backup.data;
+      setDoc(stateRef, data).then(()=>toast('Restored')).catch(err=>{ console.error(err); toast('Restore failed'); });
+    };
+  });
 }
 
 /* ---------- dynamic manifest (installable PWA, single file) ---------- */
